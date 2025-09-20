@@ -1,10 +1,17 @@
 import operator
-from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
+from src.core.query_engine.query_engine_exception import (
+    InvalidOperatorError,
+    QueryEngineError,
+)
 from src.core.query_engine.utils import get_field_value
-from src.models.tracer_models import ExecutionContext
+from src.models.tracer_models import (
+    ExecutionContext,
+    StatementExecution,
+    VariableSnapshot,
+)
 
 
 class QueryCondition:
@@ -26,105 +33,129 @@ class QueryCondition:
             "not_in": lambda x, y: x not in y,
         }
 
-    def evaluate(self, obj: Any) -> bool:
+    def evaluate(self, obj: StatementExecution | VariableSnapshot) -> bool:
         """Evaluate condition against an object."""
         try:
             field_value = get_field_value(obj, self.field)
 
             op_func = self.op_map.get(self.op)
             if not op_func:
-                raise ValueError(f"Unsupported operator: {self.op}")
+                raise InvalidOperatorError(self.op)
 
             return op_func(field_value, self.value)
-        except (AttributeError, TypeError, KeyError):
+        except (TypeError, KeyError):
             return False
 
 
-class BaseQuery(ABC):
+class Query:
     """Base class for all queries."""
 
     def __init__(self, execution_context: ExecutionContext):
         self.execution_context = execution_context
-        self.conditions: list[QueryCondition] = []
+        self.conditions: list[list[QueryCondition]] = []
+        self.order_by_fields: list[tuple[str, bool]] = []  # (field, is_ascending)
+        self.map_func: Callable[[Any], Any] | None = None
+        self.flat_map_func: Callable[[Any], Any] | None = None
         self.selected_field: str | None = None
         self.apply_distinct = False
 
     def where(
         self,
-        # field: str | None = None,
-        field: str,
+        *conditions: tuple[str, str, Any],
+        field: str | None = None,
         op: str = "==",
         value: Any = None,
-        # **kwargs: dict[str, Any],
-    ) -> "BaseQuery":
+        **kwargs: dict[str, Any],
+    ) -> "Query":
         """Add a WHERE condition."""
-        # if field is not None:
-        self.conditions.append(QueryCondition(field, op, value))
+        if field is not None:
+            self.conditions.append([QueryCondition(field, op, value)])
 
-        # for key, val in kwargs.items():
-        #     self.conditions.append(QueryCondition(key, "==", val))
+        condition_list: list[QueryCondition] = []
+        for field, op, value in conditions:
+            condition_list.append(QueryCondition(field, op, value))
+        if condition_list:
+            self.conditions.append(condition_list)
+
+        for key, val in kwargs.items():
+            self.conditions.append([QueryCondition(key, "==", val)])
 
         return self
 
-    def select(self, field: str) -> "BaseQuery":
+    def map(self, func: Callable[[Any], Any]) -> "Query":
+        """Apply a transformation function to each result."""
+        self.map_func = func
+        return self
+
+    def flat_map(self, func: Callable[[Any], list[Any]]) -> "Query":
+        """Apply a function to each item and flatten the results."""
+        self.flat_map_func = func
+        return self
+
+    def select(self, field: str) -> "Query":
         """Select specific field from results."""
+        if self.selected_field is not None:
+            raise QueryEngineError("'select' can only be applied once per query.")
         self.selected_field = field
         return self
 
-    def distinct(self) -> "BaseQuery":
+    def distinct(self) -> "Query":
         """Remove duplicates from results."""
         self.apply_distinct = True
         return self
 
-    def _apply_filters(self, items: list[Any]) -> list[Any]:
+    def order_by(self, field: str, is_ascending: bool = True) -> "Query":
+        """Sort results by a field."""
+        self.order_by_fields.append((field, is_ascending))
+        return self
+
+    def _apply_filters(
+        self, items: list[StatementExecution | VariableSnapshot]
+    ) -> list[Any]:
         result = items
 
-        # Apply WHERE condition
-        for condition in self.conditions:
-            result = [item for item in result if condition.evaluate(item)]
+        # Apply WHERE
+        for condition_list in self.conditions:
+            result = [
+                item
+                for item in result
+                if any(cond.evaluate(item) for cond in condition_list)
+            ]
+
+        # Apply ORDER BY
+        if self.order_by_fields:
+            for field, is_ascending in reversed(self.order_by_fields):
+                result.sort(
+                    key=lambda item: get_field_value(item, field),
+                    reverse=not is_ascending,
+                )
 
         # Apply SELECT
         if self.selected_field:
-            result = [  # type: ignore
-                get_field_value(item, self.selected_field) for item in result
-            ]
+            result = [get_field_value(item, self.selected_field) for item in result]
+
+        # Apply MAP
+        if self.map_func:
+            result = [self.map_func(item) for item in result]
+
+        # Apply FLAT MAP
+        if self.flat_map_func:
+            flat_mapped_result: list[Any] = []
+            for item in result:
+                flat_mapped_result.extend(self.flat_map_func(item))
+            result = flat_mapped_result
 
         # Apply DISTINCT
         if self.apply_distinct:
             result = list(set(result))
 
-        return result  # type: ignore
-
-    @abstractmethod
-    def execute(self) -> list[Any]:
-        """Execute the query and return results."""
-        pass
-
-
-class ExecutionQuery(BaseQuery):
-    """Query for statement executions."""
-
-    def __init__(self, execution_context: "ExecutionContext"):
-        super().__init__(execution_context)
+        return result
 
     def execute(self) -> list[Any]:
         """Execute the query and return results."""
         executions = self.execution_context.execution_trace
-        filtered_data = self._apply_filters(executions)
-        return filtered_data
-
-
-class VariableQuery(BaseQuery):
-    """Query for variable snapshots."""
-
-    def __init__(self, execution_context: "ExecutionContext"):
-        super().__init__(execution_context)
-
-    def execute(self) -> list[Any]:
-        """Execute the query and return results."""
         variables = self.execution_context.variables
-        filtered_data = self._apply_filters(variables)
-        return filtered_data
+        return self._apply_filters(executions + variables)
 
 
 class QueryEngine:
@@ -133,10 +164,6 @@ class QueryEngine:
     def __init__(self, execution_context: "ExecutionContext"):
         self.execution_context = execution_context
 
-    def query_executions(self) -> ExecutionQuery:
-        """Create a query for statement executions."""
-        return ExecutionQuery(self.execution_context)
-
-    def query_variables(self) -> VariableQuery:
-        """Create a query for variable snapshots."""
-        return VariableQuery(self.execution_context)
+    def create_query(self) -> Query:
+        """Create a new query instance."""
+        return Query(self.execution_context)
