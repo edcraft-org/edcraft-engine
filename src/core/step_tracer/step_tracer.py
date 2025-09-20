@@ -22,15 +22,15 @@ class StepTracer:
         if globals_dict is None:
             globals_dict = {}
 
-        execution_context = ExecutionContext()
+        exec_ctx = ExecutionContext()
         step_tracer_utils = StepTracerUtils()
 
         globals_dict.update(
             {
-                "_step_tracer_execution_context": execution_context,
+                "_step_tracer_exec_ctx": exec_ctx,
                 "_step_tracer_utils": step_tracer_utils,
             }
         )
 
         exec(transformed_code, globals_dict)
-        return execution_context
+        return exec_ctx
