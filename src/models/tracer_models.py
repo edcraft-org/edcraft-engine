@@ -20,12 +20,20 @@ class StatementExecution:
         return f"<{self.__class__.__name__} {attrs_str}>"
 
 
-class LoopIteration(StatementExecution):
-    """Records loop iteration execution."""
+class LoopExecution(StatementExecution):
+    """Records loop execution."""
 
     def __init__(self, execution_id: str, line_number: int, loop_type: str):
         super().__init__(execution_id, line_number, "loop")
         self.loop_type = loop_type
+        self.num_iterations = 0
+
+    def start_iteration(self, execution_id: str) -> "LoopIteration":
+        iteration = LoopIteration(
+            execution_id, self.line_number, self.num_iterations, self.execution_id
+        )
+        self.num_iterations += 1
+        return iteration
 
     def __repr__(self) -> str:
         attrs: dict[str, Any] = {
@@ -38,6 +46,33 @@ class LoopIteration(StatementExecution):
         return f"<{self.__class__.__name__} {attrs_str}>"
 
 
+class LoopIteration(StatementExecution):
+    """Records loop iteration."""
+
+    def __init__(
+        self,
+        execution_id: str,
+        line_number: int,
+        iteration_num: int,
+        loop_execution_id: str,
+    ):
+        super().__init__(
+            execution_id=execution_id,
+            line_number=line_number,
+            stmt_type="loop_iteration",
+        )
+        self.iteration_num = iteration_num
+        self.loop_execution_id = loop_execution_id
+
+    def __repr__(self) -> str:
+        attrs: dict[str, Any] = {
+            "iteration_num": self.iteration_num,
+            "loop_execution_id": self.loop_execution_id,
+        }
+        attrs_str = " ".join(f"{k}={v}" for k, v in attrs.items())
+        return f"<{self.__class__.__name__} {attrs_str}>"
+
+
 class FunctionCall(StatementExecution):
     """Records function call execution."""
 
@@ -45,15 +80,20 @@ class FunctionCall(StatementExecution):
         self,
         execution_id: str,
         line_number: int,
-        function_name: str,
+        func_name: str,
+        func_full_name: str,
         func_call_exec_ctx_id: str,
     ):
         super().__init__(execution_id, line_number, "function")
-        self.function_name = function_name
+        self.func_name = func_name
+        self.func_full_name = func_full_name
         self.func_def_line_num: int | None = None
         self.arguments: dict[str, Any] = {}
         self.return_value: Any = None
         self.func_call_exec_ctx_id = func_call_exec_ctx_id
+
+    def reset_args(self) -> None:
+        self.arguments = {}
 
     def add_arg(self, name: str, value: Any) -> None:
         self.arguments[name] = value
@@ -69,7 +109,8 @@ class FunctionCall(StatementExecution):
             "id": self.execution_id,
             "line": self.line_number,
             "type": self.stmt_type,
-            "function_name": self.function_name,
+            "func_name": self.func_name,
+            "func_full_name": self.func_full_name,
             "args": self.arguments,
             "return_value": self.return_value,
         }
@@ -80,16 +121,24 @@ class FunctionCall(StatementExecution):
 class BranchExecution(StatementExecution):
     """Records if/else execution."""
 
-    def __init__(self, execution_id: str, line_number: int, condition: bool):
+    def __init__(
+        self,
+        execution_id: str,
+        line_number: int,
+        condition_str: str,
+        condition_result: bool,
+    ):
         super().__init__(execution_id, line_number, "branch")
-        self.condition = condition
+        self.condition_str = condition_str
+        self.condition_result = condition_result
 
     def __repr__(self) -> str:
         attrs: dict[str, Any] = {
             "id": self.execution_id,
             "line": self.line_number,
             "type": self.stmt_type,
-            "condition": self.condition,
+            "condition_str": self.condition_str,
+            "condition_result": self.condition_result,
         }
         attrs_str = " ".join(f"{k}={v}" for k, v in attrs.items())
         return f"<{self.__class__.__name__} {attrs_str}>"
@@ -163,35 +212,43 @@ class ExecutionContext:
         self.execution_stack.append(execution)
 
     def pop_execution(self) -> None:
-        self.execution_stack.pop()
-
-    def pop_until_function(self) -> None:
-        while self.execution_stack:
-            top = self.execution_stack[-1]
-            if isinstance(top, FunctionCall):
-                break
-            self.execution_stack.pop()
+        execution = self.execution_stack.pop()
+        if isinstance(execution, FunctionCall):
             self.pop_scope()
 
-    def record_loop_iteration(self, line_number: int, loop_type: str) -> None:
+    def record_loop_execution(self, line_number: int, loop_type: str) -> None:
         execution_id = self.generate_execution_id()
-        loop_execution = LoopIteration(execution_id, line_number, loop_type)
+        loop_execution = LoopExecution(execution_id, line_number, loop_type)
         self.push_execution(loop_execution)
 
-    def record_function_call(self, line_number: int, function_name: str) -> None:
+    def record_loop_iteration(self) -> None:
+        if isinstance(self.current_execution, LoopExecution):
+            execution_id = self.generate_execution_id()
+            iteration = self.current_execution.start_iteration(execution_id)
+            self.push_execution(iteration)
+        else:
+            raise RuntimeError("No active loop execution to record iteration for.")
+
+    def record_function_call(
+        self, line_number: int, func_name: str, func_full_name: str
+    ) -> None:
         execution_id = self.generate_execution_id()
         func_call_exec_ctx_id = (
             self.current_execution.execution_id if self.current_execution else "global"
         )
         function_execution = FunctionCall(
-            execution_id, line_number, function_name, func_call_exec_ctx_id
+            execution_id, line_number, func_name, func_full_name, func_call_exec_ctx_id
         )
         self.push_execution(function_execution)
         self.push_scope(Scope("function", self.generate_scope_id(), self.current_scope))
 
-    def record_branch_execution(self, line_number: int, condition: bool) -> None:
+    def record_branch_execution(
+        self, line_number: int, condition_str: str, condition_result: bool
+    ) -> None:
         execution_id = self.generate_execution_id()
-        branch_execution = BranchExecution(execution_id, line_number, condition)
+        branch_execution = BranchExecution(
+            execution_id, line_number, condition_str, condition_result
+        )
         self.push_execution(branch_execution)
 
     def record_variable(
