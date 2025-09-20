@@ -5,7 +5,7 @@ from typing import Any
 class StatementExecution:
     """Base class for recording statement execution."""
 
-    def __init__(self, execution_id: str, line_number: int, stmt_type: str):
+    def __init__(self, execution_id: int, line_number: int, stmt_type: str):
         self.execution_id = execution_id
         self.line_number = line_number
         self.stmt_type = stmt_type
@@ -23,12 +23,12 @@ class StatementExecution:
 class LoopExecution(StatementExecution):
     """Records loop execution."""
 
-    def __init__(self, execution_id: str, line_number: int, loop_type: str):
+    def __init__(self, execution_id: int, line_number: int, loop_type: str):
         super().__init__(execution_id, line_number, "loop")
         self.loop_type = loop_type
         self.num_iterations = 0
 
-    def start_iteration(self, execution_id: str) -> "LoopIteration":
+    def start_iteration(self, execution_id: int) -> "LoopIteration":
         iteration = LoopIteration(
             execution_id, self.line_number, self.num_iterations, self.execution_id
         )
@@ -51,10 +51,10 @@ class LoopIteration(StatementExecution):
 
     def __init__(
         self,
-        execution_id: str,
+        execution_id: int,
         line_number: int,
         iteration_num: int,
-        loop_execution_id: str,
+        loop_execution_id: int,
     ):
         super().__init__(
             execution_id=execution_id,
@@ -78,11 +78,11 @@ class FunctionCall(StatementExecution):
 
     def __init__(
         self,
-        execution_id: str,
+        execution_id: int,
         line_number: int,
         func_name: str,
         func_full_name: str,
-        func_call_exec_ctx_id: str,
+        func_call_exec_ctx_id: int,
     ):
         super().__init__(execution_id, line_number, "function")
         self.func_name = func_name
@@ -123,7 +123,7 @@ class BranchExecution(StatementExecution):
 
     def __init__(
         self,
-        execution_id: str,
+        execution_id: int,
         line_number: int,
         condition_str: str,
         condition_result: bool,
@@ -152,14 +152,15 @@ class VariableSnapshot:
     value: Any
     access_path: str
     line_number: int
-    scope_id: str
-    execution_id: str
+    scope_id: int
+    execution_id: int
+    stmt_type: str = "variable"
 
 
 class Scope:
     """Represents a variable namespace."""
 
-    def __init__(self, scope_type: str, scope_id: str, parent: "Scope | None" = None):
+    def __init__(self, scope_type: str, scope_id: int, parent: "Scope | None" = None):
         self.scope_type = scope_type  # 'global', 'function', 'class'
         self.scope_id = scope_id
         self.parent = parent
@@ -179,10 +180,10 @@ class ExecutionContext:
         self.execution_stack: list[StatementExecution] = []
         self.scope_stack: list[Scope] = []
 
-        self._execution_counter: int = 0
+        self._execution_counter: int = 0 # 0 represents global scope
         self._scope_counter = 0
 
-        self.global_scope = Scope("global", "global_0")
+        self.global_scope = Scope("global", 0)
         self.scope_stack.append(self.global_scope)
 
     @property
@@ -193,13 +194,13 @@ class ExecutionContext:
     def current_scope(self) -> Scope:
         return self.scope_stack[-1]
 
-    def generate_execution_id(self) -> str:
+    def generate_execution_id(self) -> int:
         self._execution_counter += 1
-        return f"exec_{self._execution_counter}"
+        return self._execution_counter
 
-    def generate_scope_id(self) -> str:
+    def generate_scope_id(self) -> int:
         self._scope_counter += 1
-        return f"scope_{self._scope_counter}"
+        return self._scope_counter
 
     def push_scope(self, scope: Scope) -> None:
         self.scope_stack.append(scope)
@@ -234,7 +235,7 @@ class ExecutionContext:
     ) -> None:
         execution_id = self.generate_execution_id()
         func_call_exec_ctx_id = (
-            self.current_execution.execution_id if self.current_execution else "global"
+            self.current_execution.execution_id if self.current_execution else 0
         )
         function_execution = FunctionCall(
             execution_id, line_number, func_name, func_full_name, func_call_exec_ctx_id
@@ -255,7 +256,7 @@ class ExecutionContext:
         self, name: str, value: Any, access_path: str, line_number: int
     ) -> None:
         execution_id = (
-            self.current_execution.execution_id if self.current_execution else "global"
+            self.current_execution.execution_id if self.current_execution else 0
         )
         scope_id = self.current_scope.scope_id
         snapshot = VariableSnapshot(
