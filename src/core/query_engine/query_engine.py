@@ -1,4 +1,5 @@
 import operator
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal, cast
@@ -84,8 +85,21 @@ class OrderByStep:
     operation: Literal["order_by"] = "order_by"
 
 
+@dataclass
+class GroupByStep:
+    group_fields: list[str]
+    aggregations: dict[str, Callable[[list[Any]], Any]]
+    operation: Literal["group_by"] = "group_by"
+
+
 PipelineStep = (
-    WhereStep | SelectStep | MapStep | FlatMapStep | DistinctStep | OrderByStep
+    WhereStep
+    | SelectStep
+    | MapStep
+    | FlatMapStep
+    | DistinctStep
+    | OrderByStep
+    | GroupByStep
 )
 
 
@@ -132,9 +146,7 @@ class Query:
     def select(self, *fields: str) -> "Query":
         """Select specific fields from results."""
         if len(fields) == 0:
-            raise QueryEngineError(
-                "At least one field must be specified for select."
-            )
+            raise QueryEngineError("At least one field must be specified for select.")
         self.pipeline.append(SelectStep(fields=list(fields)))
         return self
 
@@ -146,6 +158,20 @@ class Query:
     def order_by(self, field: str, is_ascending: bool = True) -> "Query":
         """Sort results by a field."""
         self.pipeline.append(OrderByStep(field=field, is_ascending=is_ascending))
+        return self
+
+    def group_by(self, *fields: str) -> "Query":
+        if not fields:
+            raise QueryEngineError("At least one field must be specified for group_by.")
+        self.pipeline.append(GroupByStep(group_fields=list(fields), aggregations={}))
+        return self
+
+    def agg(self, **aggregations: Callable[[list[Any]], Any]) -> "Query":
+        if not self.pipeline or not isinstance(self.pipeline[-1], GroupByStep):
+            self.pipeline.append(GroupByStep([], aggregations=aggregations))
+        else:
+            group_step = self.pipeline[-1]
+            group_step.aggregations.update(aggregations)
         return self
 
     def _apply_pipeline(
@@ -198,7 +224,7 @@ class Query:
                             distinct_result.append(item)
                 result = distinct_result
 
-            else:
+            elif isinstance(step, OrderByStep):
                 # Apply ORDER BY
                 result.sort(
                     key=lambda item: get_field_value(
@@ -206,6 +232,34 @@ class Query:
                     ),
                     reverse=not step.is_ascending,
                 )
+
+            else:
+                # Apply GROUP BY
+                if not step.aggregations:
+                    raise QueryEngineError(
+                        "At least one aggregation function must be specified for group_by."
+                    )
+
+                if step.group_fields:
+                    grouped_items: dict[tuple[Any, ...], list[Any]] = defaultdict(list)
+                    for item in result:
+                        key = tuple(
+                            get_field_value(item, field) for field in step.group_fields
+                        )
+                        grouped_items[key].append(item)
+                else:
+                    grouped_items = {(): result}
+
+                aggregated_result: list[dict[str, Any]] = []
+                for key, group in grouped_items.items():
+                    agg_result = {
+                        field: value
+                        for field, value in zip(step.group_fields, key, strict=True)
+                    }
+                    for agg_name, agg_func in step.aggregations.items():
+                        agg_result[agg_name] = agg_func(group)
+                    aggregated_result.append(agg_result)
+                result = aggregated_result
 
         return result
 
