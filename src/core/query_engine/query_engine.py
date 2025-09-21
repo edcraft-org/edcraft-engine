@@ -1,8 +1,9 @@
 import operator
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any
 
 from src.core.query_engine.query_engine_exception import (
     InvalidOperatorError,
@@ -49,47 +50,118 @@ class QueryCondition:
             return False
 
 
+class PipelineStepBase(ABC):
+    @abstractmethod
+    def apply(self, items: list[Any]) -> list[Any]:
+        """Apply this pipeline step to the items."""
+        pass
+
+
 @dataclass
-class WhereStep:
+class WhereStep(PipelineStepBase):
     conditions: list[QueryCondition]
-    operation: Literal["where"] = "where"
+
+    def apply(self, items: list[Any]) -> list[Any]:
+        return [
+            item
+            for item in items
+            if any(cond.evaluate(item) for cond in self.conditions)
+        ]
 
 
 @dataclass
-class SelectStep:
+class SelectStep(PipelineStepBase):
     fields: list[str]
-    operation: Literal["select"] = "select"
+
+    def apply(self, items: list[Any]) -> list[Any]:
+        if len(self.fields) == 1:
+            result = [get_field_value(item, self.fields[0]) for item in items]
+        else:
+            result = [
+                {field: get_field_value(item, field) for field in self.fields}
+                for item in items
+            ]
+        return result
 
 
 @dataclass
-class MapStep:
+class MapStep(PipelineStepBase):
     func: Callable[[Any], Any]
-    operation: Literal["map"] = "map"
+
+    def apply(self, items: list[Any]) -> list[Any]:
+        return [self.func(item) for item in items]
 
 
 @dataclass
-class FlatMapStep:
+class FlatMapStep(PipelineStepBase):
     func: Callable[[Any], list[Any]]
-    operation: Literal["flat_map"] = "flat_map"
+
+    def apply(self, items: list[Any]) -> list[Any]:
+        flat_mapped_result: list[Any] = []
+        for item in items:
+            flat_mapped_result.extend(self.func(item))
+        return flat_mapped_result
 
 
 @dataclass
-class DistinctStep:
-    operation: Literal["distinct"] = "distinct"
+class DistinctStep(PipelineStepBase):
+    def apply(self, items: list[Any]) -> list[Any]:
+        seen: set[Any] = set()
+        distinct_result: list[Any] = []
+        for item in items:
+            try:
+                if item not in seen:
+                    seen.add(item)
+                    distinct_result.append(item)
+            except TypeError:
+                # Handle unhashable types
+                if item not in distinct_result:
+                    distinct_result.append(item)
+        return distinct_result
 
 
 @dataclass
-class OrderByStep:
+class OrderByStep(PipelineStepBase):
     field: str
     is_ascending: bool = True
-    operation: Literal["order_by"] = "order_by"
+
+    def apply(self, items: list[Any]) -> list[Any]:
+        return sorted(
+            items,
+            key=lambda item: get_field_value(item, self.field),
+            reverse=not self.is_ascending,
+        )
 
 
 @dataclass
-class GroupByStep:
+class GroupByStep(PipelineStepBase):
     group_fields: list[str]
     aggregations: dict[str, Callable[[list[Any]], Any]]
-    operation: Literal["group_by"] = "group_by"
+
+    def apply(self, items: list[Any]) -> list[Any]:
+        if not self.aggregations:
+            raise QueryEngineError(
+                "At least one aggregation function must be specified for group_by."
+            )
+
+        if self.group_fields:
+            grouped_items: dict[tuple[Any, ...], list[Any]] = defaultdict(list)
+            for item in items:
+                key = tuple(get_field_value(item, field) for field in self.group_fields)
+                grouped_items[key].append(item)
+        else:
+            grouped_items = {(): items}
+
+        aggregated_result: list[dict[str, Any]] = []
+        for key, group in grouped_items.items():
+            agg_result = {
+                field: value
+                for field, value in zip(self.group_fields, key, strict=True)
+            }
+            for agg_name, agg_func in self.aggregations.items():
+                agg_result[agg_name] = agg_func(group)
+            aggregated_result.append(agg_result)
+        return aggregated_result
 
 
 PipelineStep = (
@@ -178,89 +250,8 @@ class Query:
         self, items: list[StatementExecution | VariableSnapshot]
     ) -> list[Any]:
         result: list[Any] = items
-
         for step in self.pipeline:
-            if isinstance(step, WhereStep):
-                # Apply WHERE
-                result = [
-                    item
-                    for item in result
-                    if any(cond.evaluate(item) for cond in step.conditions)
-                ]
-
-            elif isinstance(step, SelectStep):
-                # Apply SELECT
-                if len(step.fields) == 1:
-                    result = [get_field_value(item, step.fields[0]) for item in result]
-                else:
-                    result = [
-                        {field: get_field_value(item, field) for field in step.fields}
-                        for item in result
-                    ]
-
-            elif isinstance(step, MapStep):
-                # Apply MAP
-                result = [step.func(item) for item in result]
-
-            elif isinstance(step, FlatMapStep):
-                # Apply FLAT MAP
-                flat_mapped_result: list[Any] = []
-                for item in result:
-                    flat_mapped_result.extend(step.func(item))
-                result = flat_mapped_result
-
-            elif isinstance(step, DistinctStep):
-                # Apply DISTINCT
-                seen: set[Any] = set()
-                distinct_result: list[Any] = []
-                for item in result:
-                    try:
-                        if item not in seen:
-                            seen.add(item)
-                            distinct_result.append(item)
-                    except TypeError:
-                        # Handle unhashable types
-                        if item not in distinct_result:
-                            distinct_result.append(item)
-                result = distinct_result
-
-            elif isinstance(step, OrderByStep):
-                # Apply ORDER BY
-                result.sort(
-                    key=lambda item: get_field_value(
-                        item, cast(OrderByStep, step).field
-                    ),
-                    reverse=not step.is_ascending,
-                )
-
-            else:
-                # Apply GROUP BY
-                if not step.aggregations:
-                    raise QueryEngineError(
-                        "At least one aggregation function must be specified for group_by."
-                    )
-
-                if step.group_fields:
-                    grouped_items: dict[tuple[Any, ...], list[Any]] = defaultdict(list)
-                    for item in result:
-                        key = tuple(
-                            get_field_value(item, field) for field in step.group_fields
-                        )
-                        grouped_items[key].append(item)
-                else:
-                    grouped_items = {(): result}
-
-                aggregated_result: list[dict[str, Any]] = []
-                for key, group in grouped_items.items():
-                    agg_result = {
-                        field: value
-                        for field, value in zip(step.group_fields, key, strict=True)
-                    }
-                    for agg_name, agg_func in step.aggregations.items():
-                        agg_result[agg_name] = agg_func(group)
-                    aggregated_result.append(agg_result)
-                result = aggregated_result
-
+            result = step.apply(result)
         return result
 
     def execute(self) -> list[Any]:
