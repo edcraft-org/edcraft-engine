@@ -1,10 +1,10 @@
 import operator
 from collections.abc import Callable
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal, cast
 
 from src.core.query_engine.query_engine_exception import (
     InvalidOperatorError,
-    QueryEngineError,
 )
 from src.core.query_engine.utils import get_field_value
 from src.models.tracer_models import (
@@ -47,17 +47,53 @@ class QueryCondition:
             return False
 
 
+@dataclass
+class WhereStep:
+    conditions: list[QueryCondition]
+    operation: Literal["where"] = "where"
+
+
+@dataclass
+class SelectStep:
+    field: str
+    operation: Literal["select"] = "select"
+
+
+@dataclass
+class MapStep:
+    func: Callable[[Any], Any]
+    operation: Literal["map"] = "map"
+
+
+@dataclass
+class FlatMapStep:
+    func: Callable[[Any], list[Any]]
+    operation: Literal["flat_map"] = "flat_map"
+
+
+@dataclass
+class DistinctStep:
+    operation: Literal["distinct"] = "distinct"
+
+
+@dataclass
+class OrderByStep:
+    field: str
+    is_ascending: bool = True
+    operation: Literal["order_by"] = "order_by"
+
+
+PipelineStep = (
+    WhereStep | SelectStep | MapStep | FlatMapStep | DistinctStep | OrderByStep
+)
+
+
 class Query:
     """Base class for all queries."""
 
     def __init__(self, execution_context: ExecutionContext):
         self.execution_context = execution_context
-        self.conditions: list[list[QueryCondition]] = []
-        self.order_by_fields: list[tuple[str, bool]] = []  # (field, is_ascending)
-        self.map_func: Callable[[Any], Any] | None = None
-        self.flat_map_func: Callable[[Any], Any] | None = None
-        self.selected_field: str | None = None
-        self.apply_distinct = False
+        self.pipeline: list[PipelineStep] = []
 
     def where(
         self,
@@ -69,85 +105,96 @@ class Query:
     ) -> "Query":
         """Add a WHERE condition."""
         if field is not None:
-            self.conditions.append([QueryCondition(field, op, value)])
+            self.pipeline.append(WhereStep([QueryCondition(field, op, value)]))
 
         condition_list: list[QueryCondition] = []
         for field, op, value in conditions:
             condition_list.append(QueryCondition(field, op, value))
         if condition_list:
-            self.conditions.append(condition_list)
+            self.pipeline.append(WhereStep(condition_list))
 
         for key, val in kwargs.items():
-            self.conditions.append([QueryCondition(key, "==", val)])
+            self.pipeline.append(WhereStep([QueryCondition(key, "==", val)]))
 
         return self
 
     def map(self, func: Callable[[Any], Any]) -> "Query":
         """Apply a transformation function to each result."""
-        self.map_func = func
+        self.pipeline.append(MapStep(func=func))
         return self
 
     def flat_map(self, func: Callable[[Any], list[Any]]) -> "Query":
         """Apply a function to each item and flatten the results."""
-        self.flat_map_func = func
+        self.pipeline.append(FlatMapStep(func=func))
         return self
 
     def select(self, field: str) -> "Query":
         """Select specific field from results."""
-        if self.selected_field is not None:
-            raise QueryEngineError("'select' can only be applied once per query.")
-        self.selected_field = field
+        self.pipeline.append(SelectStep(field=field))
         return self
 
     def distinct(self) -> "Query":
         """Remove duplicates from results."""
-        self.apply_distinct = True
+        self.pipeline.append(DistinctStep())
         return self
 
     def order_by(self, field: str, is_ascending: bool = True) -> "Query":
         """Sort results by a field."""
-        self.order_by_fields.append((field, is_ascending))
+        self.pipeline.append(OrderByStep(field=field, is_ascending=is_ascending))
         return self
 
-    def _apply_filters(
+    def _apply_pipeline(
         self, items: list[StatementExecution | VariableSnapshot]
     ) -> list[Any]:
-        result = items
+        result: list[Any] = items
 
-        # Apply WHERE
-        for condition_list in self.conditions:
-            result = [
-                item
-                for item in result
-                if any(cond.evaluate(item) for cond in condition_list)
-            ]
+        for step in self.pipeline:
+            if isinstance(step, WhereStep):
+                # Apply WHERE
+                result = [
+                    item
+                    for item in result
+                    if any(cond.evaluate(item) for cond in step.conditions)
+                ]
 
-        # Apply ORDER BY
-        if self.order_by_fields:
-            for field, is_ascending in reversed(self.order_by_fields):
+            elif isinstance(step, SelectStep):
+                # Apply SELECT
+                result = [get_field_value(item, step.field) for item in result]
+
+            elif isinstance(step, MapStep):
+                # Apply MAP
+                result = [step.func(item) for item in result]
+
+            elif isinstance(step, FlatMapStep):
+                # Apply FLAT MAP
+                flat_mapped_result: list[Any] = []
+                for item in result:
+                    flat_mapped_result.extend(step.func(item))
+                result = flat_mapped_result
+
+            elif isinstance(step, DistinctStep):
+                # Apply DISTINCT
+                seen: set[Any] = set()
+                distinct_result: list[Any] = []
+                for item in result:
+                    try:
+                        if item not in seen:
+                            seen.add(item)
+                            distinct_result.append(item)
+                    except TypeError:
+                        # Handle unhashable types
+                        if item not in distinct_result:
+                            distinct_result.append(item)
+                result = distinct_result
+
+            else:
+                # Apply ORDER BY
                 result.sort(
-                    key=lambda item: get_field_value(item, field),
-                    reverse=not is_ascending,
+                    key=lambda item: get_field_value(
+                        item, cast(OrderByStep, step).field
+                    ),
+                    reverse=not step.is_ascending,
                 )
-
-        # Apply SELECT
-        if self.selected_field:
-            result = [get_field_value(item, self.selected_field) for item in result]
-
-        # Apply MAP
-        if self.map_func:
-            result = [self.map_func(item) for item in result]
-
-        # Apply FLAT MAP
-        if self.flat_map_func:
-            flat_mapped_result: list[Any] = []
-            for item in result:
-                flat_mapped_result.extend(self.flat_map_func(item))
-            result = flat_mapped_result
-
-        # Apply DISTINCT
-        if self.apply_distinct:
-            result = list(set(result))
 
         return result
 
@@ -155,7 +202,7 @@ class Query:
         """Execute the query and return results."""
         executions = self.execution_context.execution_trace
         variables = self.execution_context.variables
-        return self._apply_filters(executions + variables)
+        return self._apply_pipeline(executions + variables)
 
 
 class QueryEngine:
