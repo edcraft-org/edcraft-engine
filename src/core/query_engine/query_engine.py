@@ -5,6 +5,7 @@ from typing import Any, Literal, cast
 
 from src.core.query_engine.query_engine_exception import (
     InvalidOperatorError,
+    QueryEngineError,
 )
 from src.core.query_engine.utils import get_field_value
 from src.models.tracer_models import (
@@ -55,7 +56,7 @@ class WhereStep:
 
 @dataclass
 class SelectStep:
-    field: str
+    fields: list[str]
     operation: Literal["select"] = "select"
 
 
@@ -128,9 +129,13 @@ class Query:
         self.pipeline.append(FlatMapStep(func=func))
         return self
 
-    def select(self, field: str) -> "Query":
-        """Select specific field from results."""
-        self.pipeline.append(SelectStep(field=field))
+    def select(self, *fields: str) -> "Query":
+        """Select specific fields from results."""
+        if len(fields) == 0:
+            raise QueryEngineError(
+                "At least one field must be specified for select."
+            )
+        self.pipeline.append(SelectStep(fields=list(fields)))
         return self
 
     def distinct(self) -> "Query":
@@ -159,7 +164,13 @@ class Query:
 
             elif isinstance(step, SelectStep):
                 # Apply SELECT
-                result = [get_field_value(item, step.field) for item in result]
+                if len(step.fields) == 1:
+                    result = [get_field_value(item, step.fields[0]) for item in result]
+                else:
+                    result = [
+                        {field: get_field_value(item, field) for field in step.fields}
+                        for item in result
+                    ]
 
             elif isinstance(step, MapStep):
                 # Apply MAP
