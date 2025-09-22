@@ -169,6 +169,16 @@ class Scope:
         if parent:
             parent.children.append(self)
 
+    def __repr__(self) -> str:
+        attrs: dict[str, Any] = {
+            "scope_type": self.scope_type,
+            "scope_id": self.scope_id,
+            "parent": self.parent,
+            "children": [child.scope_id for child in self.children],
+        }
+        attrs_str = " ".join(f"{k}={v}" for k, v in attrs.items())
+        return f"<{self.__class__.__name__} {attrs_str}>"
+
 
 class ExecutionContext:
     """Manages overall program execution state."""
