@@ -79,6 +79,11 @@ class TracerTransformer(ast.NodeTransformer):
             arg_tracking_call = self._create_add_arg_call(arg.arg, arg_value_expr)
             new_body.append(arg_tracking_call)
 
+            var_tracking_call = self._create_variable_tracking_call(
+                arg.arg, arg.arg, node.lineno
+            )
+            new_body.append(var_tracking_call)
+
         new_body.extend(node.body)
         node.body = new_body
 
@@ -353,7 +358,7 @@ class TracerTransformer(ast.NodeTransformer):
         self, var_name: str, access_path: str, line_no: int
     ) -> ast.stmt:
         return ast.parse(
-            f"{self.exec_ctx_name}.record_variable({var_name!r}, _step_tracer_utils.safe_deepcopy({access_path}), {access_path!r}, {line_no})"
+            f"{self.exec_ctx_name}.record_variable({var_name!r}, _step_tracer_utils.safe_deepcopy({var_name}), {access_path!r}, {line_no})"
         ).body[0]
 
     # ### Conditional Tracking Code
