@@ -18,6 +18,14 @@ class TracerTransformer(ast.NodeTransformer):
         )
         node.body.insert(0, iteration_start)
         node.body.append(iteration_end)
+
+        # track variables assigned in the for loop target
+        variables = self._extract_variable_names(node.target)
+        for var_name, access_path in variables:
+            track_call = self._create_variable_tracking_call(
+                var_name, access_path, node.lineno
+            )
+            node.body.insert(1, track_call)
         return [loop_start, node, loop_end]
 
     def visit_While(self, node: ast.While) -> list[ast.stmt]:
