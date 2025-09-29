@@ -26,6 +26,12 @@ class TracerTransformer(ast.NodeTransformer):
                 var_name, access_path, node.lineno
             )
             node.body.insert(1, track_call)
+
+        if isinstance(node.iter, ast.Call):
+            expanded_nodes = self.expand_call(node.iter)
+            node.iter = expanded_nodes[-1].value
+            return [loop_start, *expanded_nodes, node, loop_end]
+        
         return [loop_start, node, loop_end]
 
     def visit_While(self, node: ast.While) -> list[ast.stmt]:
