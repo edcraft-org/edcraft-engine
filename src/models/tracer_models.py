@@ -10,6 +10,7 @@ class StatementExecution:
     ):
         self.execution_id = execution_id
         self.scope_id = scope_id
+        self.end_execution_id: int | None = None
         self.line_number = line_number
         self.stmt_type = stmt_type
 
@@ -21,6 +22,9 @@ class StatementExecution:
         }
         attrs_str = " ".join(f"{k}={v}" for k, v in attrs.items())
         return f"<{self.__class__.__name__} {attrs_str}>"
+
+    def set_end_execution_id(self, end_execution_id: int) -> None:
+        self.end_execution_id = end_execution_id
 
 
 class LoopExecution(StatementExecution):
@@ -238,6 +242,7 @@ class ExecutionContext:
 
     def pop_execution(self) -> None:
         execution = self.execution_stack.pop()
+        execution.set_end_execution_id(self._execution_counter)
         if isinstance(execution, FunctionCall):
             self.pop_scope()
 
