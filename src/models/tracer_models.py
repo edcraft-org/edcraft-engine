@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from types import TracebackType
 from typing import Any
 
 
@@ -162,6 +163,27 @@ class BranchExecution(StatementExecution):
         return f"<{self.__class__.__name__} {attrs_str}>"
 
 
+class StatementExecutionTracker:
+    """Context manager that ensures execution push/pop happen safely."""
+
+    def __init__(
+        self, exec_ctx: "ExecutionContext", execution: StatementExecution
+    ) -> None:
+        self.exec_ctx = exec_ctx
+        self.execution = execution
+
+    def __enter__(self) -> None:
+        self.exec_ctx.push_execution(self.execution)
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self.exec_ctx.pop_execution()
+
+
 @dataclass
 class VariableSnapshot:
     """Records a variable's value at a specific point in execution."""
@@ -239,6 +261,10 @@ class ExecutionContext:
     def push_execution(self, execution: StatementExecution) -> None:
         self.execution_trace.append(execution)
         self.execution_stack.append(execution)
+        if isinstance(execution, FunctionCall):
+            self.push_scope(
+                Scope("function", self.generate_scope_id(), self.current_scope)
+            )
 
     def pop_execution(self) -> None:
         execution = self.execution_stack.pop()
@@ -246,24 +272,29 @@ class ExecutionContext:
         if isinstance(execution, FunctionCall):
             self.pop_scope()
 
-    def record_loop_execution(self, line_number: int, loop_type: str) -> None:
+    def track_stmt_exec(
+        self, execution: StatementExecution
+    ) -> StatementExecutionTracker:
+        return StatementExecutionTracker(self, execution)
+
+    def create_loop_execution(self, line_number: int, loop_type: str) -> LoopExecution:
         execution_id = self.generate_execution_id()
         scope_id = self.current_scope.scope_id
         loop_execution = LoopExecution(execution_id, scope_id, line_number, loop_type)
-        self.push_execution(loop_execution)
+        return loop_execution
 
-    def record_loop_iteration(self) -> None:
+    def create_loop_iteration(self) -> LoopIteration:
         if isinstance(self.current_execution, LoopExecution):
             execution_id = self.generate_execution_id()
             scope_id = self.current_scope.scope_id
             iteration = self.current_execution.start_iteration(execution_id, scope_id)
-            self.push_execution(iteration)
+            return iteration
         else:
             raise RuntimeError("No active loop execution to record iteration for.")
 
-    def record_function_call(
+    def create_function_call(
         self, line_number: int, func_name: str, func_full_name: str
-    ) -> None:
+    ) -> FunctionCall:
         execution_id = self.generate_execution_id()
         scope_id = self.current_scope.scope_id
         func_call_exec_ctx_id = (
@@ -277,18 +308,17 @@ class ExecutionContext:
             func_full_name,
             func_call_exec_ctx_id,
         )
-        self.push_execution(function_execution)
-        self.push_scope(Scope("function", self.generate_scope_id(), self.current_scope))
+        return function_execution
 
-    def record_branch_execution(
+    def create_branch_execution(
         self, line_number: int, condition_str: str, condition_result: bool
-    ) -> None:
+    ) -> BranchExecution:
         execution_id = self.generate_execution_id()
         scope_id = self.current_scope.scope_id
         branch_execution = BranchExecution(
             execution_id, scope_id, line_number, condition_str, condition_result
         )
-        self.push_execution(branch_execution)
+        return branch_execution
 
     def record_variable(
         self, name: str, value: Any, access_path: str, line_number: int

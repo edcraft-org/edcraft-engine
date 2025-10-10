@@ -13,11 +13,6 @@ class TracerTransformer(ast.NodeTransformer):
     def visit_For(self, node: ast.For) -> list[ast.stmt]:
         """Transform for loops to track iterations."""
         self.generic_visit(node)
-        loop_start, loop_end, iteration_start, iteration_end = (
-            self._create_loop_tracking_calls(node.lineno, "for")
-        )
-        node.body.insert(0, iteration_start)
-        node.body.append(iteration_end)
 
         # track variables assigned in the for loop target
         variables = self._extract_variable_names(node.target)
@@ -25,37 +20,58 @@ class TracerTransformer(ast.NodeTransformer):
             track_call = self._create_variable_tracking_call(
                 var_name, access_path, node.lineno
             )
-            node.body.insert(1, track_call)
+            node.body.insert(0, track_call)
+
+        iteration_body = self._wrap_with_ctx(node.body, self._create_loop_iter_call())
+        node.body = [iteration_body]
+
+        stmts: list[ast.stmt] = [node]
 
         if isinstance(node.iter, ast.Call):
             expanded_nodes = self.expand_call(node.iter)
             node.iter = expanded_nodes[-1].value
-            return [loop_start, *expanded_nodes, node, loop_end]
-        
-        return [loop_start, node, loop_end]
+            stmts = [*expanded_nodes, node]
+
+        loop = self._wrap_with_ctx(
+            stmts, self._create_loop_exec_call(node.lineno, "for")
+        )
+
+        return [loop]
 
     def visit_While(self, node: ast.While) -> list[ast.stmt]:
         """Transform while loops to track iterations."""
         self.generic_visit(node)
-        loop_start, loop_end, iteration_start, iteration_end = (
-            self._create_loop_tracking_calls(node.lineno, "while")
-        )
-        node.body.insert(0, iteration_start)
-        node.body.append(iteration_end)
-        return [loop_start, node, loop_end]
 
-    def _create_loop_tracking_calls(
-        self, lineno: int, loop_type: str
-    ) -> tuple[ast.stmt, ast.stmt, ast.stmt, ast.stmt]:
-        loop_start = ast.parse(
-            f"{self.exec_ctx_name}.record_loop_execution({lineno}, {loop_type!r})"
-        ).body[0]
-        loop_end = self._create_pop_exec_call()
-        iteration_start = ast.parse(
-            f"{self.exec_ctx_name}.record_loop_iteration()"
-        ).body[0]
-        iteration_end = self._create_pop_exec_call()
-        return loop_start, loop_end, iteration_start, iteration_end
+        iteration_body = self._wrap_with_ctx(node.body, self._create_loop_iter_call())
+        node.body = [iteration_body]
+
+        loop = self._wrap_with_ctx(
+            [node], self._create_loop_exec_call(node.lineno, "while")
+        )
+
+        return [loop]
+
+    def _create_loop_exec_call(self, lineno: int, loop_type: str) -> ast.Call:
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id=self.exec_ctx_name, ctx=ast.Load()),
+                attr="create_loop_execution",
+                ctx=ast.Load(),
+            ),
+            args=[ast.Constant(value=lineno), ast.Constant(value=loop_type)],
+            keywords=[],
+        )
+
+    def _create_loop_iter_call(self) -> ast.Call:
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id=self.exec_ctx_name, ctx=ast.Load()),
+                attr="create_loop_iteration",
+                ctx=ast.Load(),
+            ),
+            args=[],
+            keywords=[],
+        )
 
     ### Function Tracking Code
 
@@ -103,20 +119,14 @@ class TracerTransformer(ast.NodeTransformer):
 
         return node
 
-    def expand_call(
-        self, node: ast.Call
-    ) -> tuple[
-        ast.Expr, *tuple[ast.Expr, ...], ast.Assign, ast.Expr, ast.Expr, ast.Expr
-    ]:
+    def expand_call(self, node: ast.Call) -> tuple[ast.With, ast.Expr]:
         """Transform function calls to track execution."""
         self.generic_visit(node)
 
         # Record function call
         func_name = self._get_func_name(node.func)
         func_full_name = self._get_func_full_name(node.func)
-        record_func_node = self._create_record_func_call(
-            node, func_name, func_full_name
-        )
+        create_func_call = self._create_func_call(node, func_name, func_full_name)
 
         # Record arguments
         arg_stmts: list[ast.Expr] = []
@@ -130,7 +140,7 @@ class TracerTransformer(ast.NodeTransformer):
 
         # Record return value
         tmp_ret_var = "_step_tracer_tmp_ret"
-        assign_node = ast.Assign(
+        temp_node = ast.Assign(
             targets=[ast.Name(id=tmp_ret_var, ctx=ast.Store())],
             value=node,
         )
@@ -139,35 +149,30 @@ class TracerTransformer(ast.NodeTransformer):
         )
 
         new_node = ast.Expr(ast.Name(id=tmp_ret_var, ctx=ast.Load()))
-        pop_node = self._create_pop_exec_call()
 
         return (
-            record_func_node,
-            *arg_stmts,
-            assign_node,
-            record_ret_node,
-            pop_node,
+            self._wrap_with_ctx(
+                [*arg_stmts, temp_node, record_ret_node], create_func_call
+            ),
             new_node,
         )
 
-    def _create_record_func_call(
+    def _create_func_call(
         self, node: ast.Call, func_name: str, func_full_name: str
-    ) -> ast.Expr:
+    ) -> ast.Call:
         """Create a call to track a function call."""
-        return ast.Expr(
-            ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id=self.exec_ctx_name, ctx=ast.Load()),
-                    attr="record_function_call",
-                    ctx=ast.Load(),
-                ),
-                args=[
-                    ast.Constant(value=node.lineno),
-                    ast.Constant(value=func_name),
-                    ast.Constant(value=func_full_name),
-                ],
-                keywords=[],
-            )
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id=self.exec_ctx_name, ctx=ast.Load()),
+                attr="create_function_call",
+                ctx=ast.Load(),
+            ),
+            args=[
+                ast.Constant(value=node.lineno),
+                ast.Constant(value=func_name),
+                ast.Constant(value=func_full_name),
+            ],
+            keywords=[],
         )
 
     def _create_add_arg_call(self, name: str, arg_value: ast.expr) -> ast.Expr:
@@ -384,12 +389,11 @@ class TracerTransformer(ast.NodeTransformer):
             targets=[ast.Name(id="_step_tracer_temp", ctx=ast.Store())], value=node.test
         )
 
-        record_branch_exec = self._create_record_branch_execution_call(
+        branch_exec = self._create_branch_execution(
             node.lineno,
             node.test,
             ast.Name(id="_step_tracer_temp", ctx=ast.Load()),
         )
-        branch_end = self._create_pop_exec_call()
 
         new_if = ast.If(
             test=ast.Name(id="_step_tracer_temp", ctx=ast.Load()),
@@ -397,40 +401,44 @@ class TracerTransformer(ast.NodeTransformer):
             orelse=node.orelse,
         )
 
-        return [temp_test_cond, record_branch_exec, new_if, branch_end]
+        wrapped_if = self._wrap_with_ctx([new_if], branch_exec)
 
-    def _create_record_branch_execution_call(
+        return [temp_test_cond, wrapped_if]
+
+    def _create_branch_execution(
         self, line_number: int, cond: ast.expr, temp_cond: ast.expr
-    ) -> ast.stmt:
+    ) -> ast.Call:
         """Create a call to track an if else branch."""
-        return ast.Expr(
-            ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id=self.exec_ctx_name, ctx=ast.Load()),
-                    attr="record_branch_execution",
-                    ctx=ast.Load(),
-                ),
-                args=[
-                    ast.Constant(value=line_number),
-                    ast.Constant(value=ast.unparse(cond)),
-                    temp_cond,
-                ],
-                keywords=[],
-            )
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id=self.exec_ctx_name, ctx=ast.Load()),
+                attr="create_branch_execution",
+                ctx=ast.Load(),
+            ),
+            args=[
+                ast.Constant(value=line_number),
+                ast.Constant(value=ast.unparse(cond)),
+                temp_cond,
+            ],
+            keywords=[],
         )
 
     ### General
 
-    def _create_pop_exec_call(self) -> ast.Expr:
-        """Create a call to pop the current execution context."""
-        return ast.Expr(
-            value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id=self.exec_ctx_name, ctx=ast.Load()),
-                    attr="pop_execution",
-                    ctx=ast.Load(),
-                ),
-                args=[],
-                keywords=[],
-            )
+    def _wrap_with_ctx(
+        self, body: list[ast.stmt], create_stmt_exec_node: ast.Call
+    ) -> ast.With:
+        track_call = ast.Call(
+            func=ast.Attribute(
+                value=ast.Name(id=self.exec_ctx_name, ctx=ast.Load()),
+                attr="track_stmt_exec",
+                ctx=ast.Load(),
+            ),
+            args=[create_stmt_exec_node],
+            keywords=[],
+        )
+
+        return ast.With(
+            items=[ast.withitem(context_expr=track_call)],
+            body=body,
         )
