@@ -5,8 +5,11 @@ from typing import Any
 class StatementExecution:
     """Base class for recording statement execution."""
 
-    def __init__(self, execution_id: int, line_number: int, stmt_type: str):
+    def __init__(
+        self, execution_id: int, scope_id: int, line_number: int, stmt_type: str
+    ):
         self.execution_id = execution_id
+        self.scope_id = scope_id
         self.line_number = line_number
         self.stmt_type = stmt_type
 
@@ -23,14 +26,21 @@ class StatementExecution:
 class LoopExecution(StatementExecution):
     """Records loop execution."""
 
-    def __init__(self, execution_id: int, line_number: int, loop_type: str):
-        super().__init__(execution_id, line_number, "loop")
+    def __init__(
+        self, execution_id: int, scope_id: int, line_number: int, loop_type: str
+    ):
+        super().__init__(execution_id, scope_id, line_number, "loop")
         self.loop_type = loop_type
         self.num_iterations = 0
+        # todo: condition
 
-    def start_iteration(self, execution_id: int) -> "LoopIteration":
+    def start_iteration(self, execution_id: int, scope_id: int) -> "LoopIteration":
         iteration = LoopIteration(
-            execution_id, self.line_number, self.num_iterations, self.execution_id
+            execution_id,
+            scope_id,
+            self.line_number,
+            self.num_iterations,
+            self.execution_id,
         )
         self.num_iterations += 1
         return iteration
@@ -52,12 +62,14 @@ class LoopIteration(StatementExecution):
     def __init__(
         self,
         execution_id: int,
+        scope_id: int,
         line_number: int,
         iteration_num: int,
         loop_execution_id: int,
     ):
         super().__init__(
             execution_id=execution_id,
+            scope_id=scope_id,
             line_number=line_number,
             stmt_type="loop_iteration",
         )
@@ -79,12 +91,13 @@ class FunctionCall(StatementExecution):
     def __init__(
         self,
         execution_id: int,
+        scope_id: int,
         line_number: int,
         func_name: str,
         func_full_name: str,
         func_call_exec_ctx_id: int,
     ):
-        super().__init__(execution_id, line_number, "function")
+        super().__init__(execution_id, scope_id, line_number, "function")
         self.func_name = func_name
         self.func_full_name = func_full_name
         self.func_def_line_num: int | None = None
@@ -124,11 +137,12 @@ class BranchExecution(StatementExecution):
     def __init__(
         self,
         execution_id: int,
+        scope_id: int,
         line_number: int,
         condition_str: str,
         condition_result: bool,
     ):
-        super().__init__(execution_id, line_number, "branch")
+        super().__init__(execution_id, scope_id, line_number, "branch")
         self.condition_str = condition_str
         self.condition_result = condition_result
 
@@ -190,7 +204,7 @@ class ExecutionContext:
         self.execution_stack: list[StatementExecution] = []
         self.scope_stack: list[Scope] = []
 
-        self._execution_counter: int = 0 # 0 represents global scope
+        self._execution_counter: int = 0  # 0 represents global scope
         self._scope_counter = 0
 
         self.global_scope = Scope("global", 0)
@@ -229,13 +243,15 @@ class ExecutionContext:
 
     def record_loop_execution(self, line_number: int, loop_type: str) -> None:
         execution_id = self.generate_execution_id()
-        loop_execution = LoopExecution(execution_id, line_number, loop_type)
+        scope_id = self.current_scope.scope_id
+        loop_execution = LoopExecution(execution_id, scope_id, line_number, loop_type)
         self.push_execution(loop_execution)
 
     def record_loop_iteration(self) -> None:
         if isinstance(self.current_execution, LoopExecution):
             execution_id = self.generate_execution_id()
-            iteration = self.current_execution.start_iteration(execution_id)
+            scope_id = self.current_scope.scope_id
+            iteration = self.current_execution.start_iteration(execution_id, scope_id)
             self.push_execution(iteration)
         else:
             raise RuntimeError("No active loop execution to record iteration for.")
@@ -244,11 +260,17 @@ class ExecutionContext:
         self, line_number: int, func_name: str, func_full_name: str
     ) -> None:
         execution_id = self.generate_execution_id()
+        scope_id = self.current_scope.scope_id
         func_call_exec_ctx_id = (
             self.current_execution.execution_id if self.current_execution else 0
         )
         function_execution = FunctionCall(
-            execution_id, line_number, func_name, func_full_name, func_call_exec_ctx_id
+            execution_id,
+            scope_id,
+            line_number,
+            func_name,
+            func_full_name,
+            func_call_exec_ctx_id,
         )
         self.push_execution(function_execution)
         self.push_scope(Scope("function", self.generate_scope_id(), self.current_scope))
@@ -257,8 +279,9 @@ class ExecutionContext:
         self, line_number: int, condition_str: str, condition_result: bool
     ) -> None:
         execution_id = self.generate_execution_id()
+        scope_id = self.current_scope.scope_id
         branch_execution = BranchExecution(
-            execution_id, line_number, condition_str, condition_result
+            execution_id, scope_id, line_number, condition_str, condition_result
         )
         self.push_execution(branch_execution)
 
