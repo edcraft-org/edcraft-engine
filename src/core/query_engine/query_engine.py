@@ -164,6 +164,22 @@ class GroupByStep(PipelineStepBase):
         return aggregated_result
 
 
+@dataclass
+class OffsetStep(PipelineStepBase):
+    offset: int
+
+    def apply(self, items: list[Any]) -> list[Any]:
+        return items[self.offset :]
+
+
+@dataclass
+class LimitStep(PipelineStepBase):
+    limit: int
+
+    def apply(self, items: list[Any]) -> list[Any]:
+        return items[: self.limit]
+
+
 PipelineStep = (
     WhereStep
     | SelectStep
@@ -172,6 +188,8 @@ PipelineStep = (
     | DistinctStep
     | OrderByStep
     | GroupByStep
+    | OffsetStep
+    | LimitStep
 )
 
 
@@ -244,6 +262,20 @@ class Query:
         else:
             group_step = self.pipeline[-1]
             group_step.aggregations.update(aggregations)
+        return self
+
+    def offset(self, offset: int) -> "Query":
+        """Skip a number of results."""
+        if offset < 0:
+            raise QueryEngineError("Offset must be non-negative.")
+        self.pipeline.append(OffsetStep(offset=offset))
+        return self
+
+    def limit(self, limit: int) -> "Query":
+        """Limit the number of results."""
+        if limit <= 0:
+            raise QueryEngineError("Limit must be positive.")
+        self.pipeline.append(LimitStep(limit=limit))
         return self
 
     def _apply_pipeline(
