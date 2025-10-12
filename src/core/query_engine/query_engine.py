@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from src.core.query_engine.query_engine_exception import (
     InvalidOperatorError,
@@ -93,14 +93,15 @@ class MapStep(PipelineStepBase):
 
 
 @dataclass
-class FlatMapStep(PipelineStepBase):
-    func: Callable[[Any], list[Any]]
-
+class ReduceStep(PipelineStepBase):
     def apply(self, items: list[Any]) -> list[Any]:
-        flat_mapped_result: list[Any] = []
+        reduced_result: list[Any] = []
         for item in items:
-            flat_mapped_result.extend(self.func(item))
-        return flat_mapped_result
+            if isinstance(item, list):
+                reduced_result.extend(cast(list[Any], item))
+            else:
+                reduced_result.append(item)
+        return reduced_result
 
 
 @dataclass
@@ -184,7 +185,7 @@ PipelineStep = (
     WhereStep
     | SelectStep
     | MapStep
-    | FlatMapStep
+    | ReduceStep
     | DistinctStep
     | OrderByStep
     | GroupByStep
@@ -228,9 +229,9 @@ class Query:
         self.pipeline.append(MapStep(func=func))
         return self
 
-    def flat_map(self, func: Callable[[Any], list[Any]]) -> "Query":
-        """Apply a function to each item and flatten the results."""
-        self.pipeline.append(FlatMapStep(func=func))
+    def reduce(self) -> "Query":
+        """Reduce results by one dimension."""
+        self.pipeline.append(ReduceStep())
         return self
 
     def select(self, *fields: str) -> "Query":
