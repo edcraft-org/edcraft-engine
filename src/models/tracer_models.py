@@ -1,114 +1,68 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any
 
 
+@dataclass
 class StatementExecution:
     """Base class for recording statement execution."""
 
-    def __init__(
-        self, execution_id: int, scope_id: int, line_number: int, stmt_type: str
-    ):
-        self.execution_id = execution_id
-        self.scope_id = scope_id
-        self.end_execution_id: int | None = None
-        self.line_number = line_number
-        self.stmt_type = stmt_type
-
-    def __repr__(self) -> str:
-        attrs: dict[str, Any] = {
-            "id": self.execution_id,
-            "line": self.line_number,
-            "type": self.stmt_type,
-        }
-        attrs_str = " ".join(f"{k}={v}" for k, v in attrs.items())
-        return f"<{self.__class__.__name__} {attrs_str}>"
+    execution_id: int
+    scope_id: int
+    line_number: int
+    stmt_type: str = field(default="statement", init=False)
+    end_execution_id: int | None = field(default=None, init=False)
 
     def set_end_execution_id(self, end_execution_id: int) -> None:
         self.end_execution_id = end_execution_id
 
 
+@dataclass
 class LoopExecution(StatementExecution):
     """Records loop execution."""
 
-    def __init__(
-        self, execution_id: int, scope_id: int, line_number: int, loop_type: str
-    ):
-        super().__init__(execution_id, scope_id, line_number, "loop")
-        self.loop_type = loop_type
-        self.num_iterations = 0
-        # todo: condition
+    loop_type: str
+    num_iterations: int = 0
+
+    def __post_init__(self) -> None:
+        self.stmt_type = "loop"
 
     def start_iteration(self, execution_id: int, scope_id: int) -> "LoopIteration":
         iteration = LoopIteration(
-            execution_id,
-            scope_id,
-            self.line_number,
-            self.num_iterations,
-            self.execution_id,
+            execution_id=execution_id,
+            scope_id=scope_id,
+            line_number=self.line_number,
+            iteration_num=self.num_iterations,
+            loop_execution_id=self.execution_id,
         )
         self.num_iterations += 1
         return iteration
 
-    def __repr__(self) -> str:
-        attrs: dict[str, Any] = {
-            "id": self.execution_id,
-            "line": self.line_number,
-            "type": self.stmt_type,
-            "loop_type": self.loop_type,
-        }
-        attrs_str = " ".join(f"{k}={v}" for k, v in attrs.items())
-        return f"<{self.__class__.__name__} {attrs_str}>"
 
-
+@dataclass
 class LoopIteration(StatementExecution):
     """Records loop iteration."""
 
-    def __init__(
-        self,
-        execution_id: int,
-        scope_id: int,
-        line_number: int,
-        iteration_num: int,
-        loop_execution_id: int,
-    ):
-        super().__init__(
-            execution_id=execution_id,
-            scope_id=scope_id,
-            line_number=line_number,
-            stmt_type="loop_iteration",
-        )
-        self.iteration_num = iteration_num
-        self.loop_execution_id = loop_execution_id
+    iteration_num: int
+    loop_execution_id: int
 
-    def __repr__(self) -> str:
-        attrs: dict[str, Any] = {
-            "iteration_num": self.iteration_num,
-            "loop_execution_id": self.loop_execution_id,
-        }
-        attrs_str = " ".join(f"{k}={v}" for k, v in attrs.items())
-        return f"<{self.__class__.__name__} {attrs_str}>"
+    def __post_init__(self) -> None:
+        self.stmt_type = "loop_iteration"
 
 
+@dataclass
 class FunctionCall(StatementExecution):
     """Records function call execution."""
 
-    def __init__(
-        self,
-        execution_id: int,
-        scope_id: int,
-        line_number: int,
-        func_name: str,
-        func_full_name: str,
-        func_call_exec_ctx_id: int,
-    ):
-        super().__init__(execution_id, scope_id, line_number, "function")
-        self.func_name = func_name
-        self.func_full_name = func_full_name
-        self.func_def_line_num: int | None = None
-        self.arguments: dict[str, Any] = {}
-        self.return_value: Any = None
-        self.func_call_exec_ctx_id = func_call_exec_ctx_id
+    func_name: str
+    func_full_name: str
+    func_call_exec_ctx_id: int
+    func_def_line_num: int | None = None
+    arguments: dict[str, Any] = field(default_factory=dict[str, Any])
+    return_value: Any = None
+
+    def __post_init__(self) -> None:
+        self.stmt_type = "function"
 
     def reset_args(self) -> None:
         self.arguments = {}
@@ -122,45 +76,16 @@ class FunctionCall(StatementExecution):
     def set_return_value(self, return_value: Any) -> None:
         self.return_value = return_value
 
-    def __repr__(self) -> str:
-        attrs: dict[str, Any] = {
-            "id": self.execution_id,
-            "line": self.line_number,
-            "type": self.stmt_type,
-            "func_name": self.func_name,
-            "func_full_name": self.func_full_name,
-            "args": self.arguments,
-            "return_value": self.return_value,
-        }
-        attrs_str = " ".join(f"{k}={v}" for k, v in attrs.items())
-        return f"<{self.__class__.__name__} {attrs_str}>"
 
-
+@dataclass
 class BranchExecution(StatementExecution):
     """Records if/else execution."""
 
-    def __init__(
-        self,
-        execution_id: int,
-        scope_id: int,
-        line_number: int,
-        condition_str: str,
-        condition_result: bool,
-    ):
-        super().__init__(execution_id, scope_id, line_number, "branch")
-        self.condition_str = condition_str
-        self.condition_result = condition_result
+    condition_str: str
+    condition_result: bool
 
-    def __repr__(self) -> str:
-        attrs: dict[str, Any] = {
-            "id": self.execution_id,
-            "line": self.line_number,
-            "type": self.stmt_type,
-            "condition_str": self.condition_str,
-            "condition_result": self.condition_result,
-        }
-        attrs_str = " ".join(f"{k}={v}" for k, v in attrs.items())
-        return f"<{self.__class__.__name__} {attrs_str}>"
+    def __post_init__(self) -> None:
+        self.stmt_type = "branch"
 
 
 class StatementExecutionTracker:
@@ -197,27 +122,18 @@ class VariableSnapshot:
     stmt_type: str = "variable"
 
 
+@dataclass
 class Scope:
     """Represents a variable namespace."""
 
-    def __init__(self, scope_type: str, scope_id: int, parent: "Scope | None" = None):
-        self.scope_type = scope_type  # 'global', 'function', 'class'
-        self.scope_id = scope_id
-        self.parent = parent
-        self.children: list[Scope] = []
+    scope_type: str  # 'global', 'function', 'class'
+    scope_id: int
+    parent: "Scope | None" = None
+    children: list["Scope"] = field(default_factory=list["Scope"])
 
-        if parent:
-            parent.children.append(self)
-
-    def __repr__(self) -> str:
-        attrs: dict[str, Any] = {
-            "scope_type": self.scope_type,
-            "scope_id": self.scope_id,
-            "parent": self.parent,
-            "children": [child.scope_id for child in self.children],
-        }
-        attrs_str = " ".join(f"{k}={v}" for k, v in attrs.items())
-        return f"<{self.__class__.__name__} {attrs_str}>"
+    def __post_init__(self) -> None:
+        if self.parent:
+            self.parent.children.append(self)
 
 
 class ExecutionContext:
@@ -263,7 +179,11 @@ class ExecutionContext:
         self.execution_stack.append(execution)
         if isinstance(execution, FunctionCall):
             self.push_scope(
-                Scope("function", self.generate_scope_id(), self.current_scope)
+                Scope(
+                    scope_type="function",
+                    scope_id=self.generate_scope_id(),
+                    parent=self.current_scope,
+                )
             )
 
     def pop_execution(self) -> None:
@@ -280,7 +200,12 @@ class ExecutionContext:
     def create_loop_execution(self, line_number: int, loop_type: str) -> LoopExecution:
         execution_id = self.generate_execution_id()
         scope_id = self.current_scope.scope_id
-        loop_execution = LoopExecution(execution_id, scope_id, line_number, loop_type)
+        loop_execution = LoopExecution(
+            execution_id=execution_id,
+            scope_id=scope_id,
+            line_number=line_number,
+            loop_type=loop_type,
+        )
         return loop_execution
 
     def create_loop_iteration(self) -> LoopIteration:
@@ -301,12 +226,12 @@ class ExecutionContext:
             self.current_execution.execution_id if self.current_execution else 0
         )
         function_execution = FunctionCall(
-            execution_id,
-            scope_id,
-            line_number,
-            func_name,
-            func_full_name,
-            func_call_exec_ctx_id,
+            execution_id=execution_id,
+            scope_id=scope_id,
+            line_number=line_number,
+            func_name=func_name,
+            func_full_name=func_full_name,
+            func_call_exec_ctx_id=func_call_exec_ctx_id,
         )
         return function_execution
 
@@ -316,7 +241,11 @@ class ExecutionContext:
         execution_id = self.generate_execution_id()
         scope_id = self.current_scope.scope_id
         branch_execution = BranchExecution(
-            execution_id, scope_id, line_number, condition_str, condition_result
+            execution_id=execution_id,
+            scope_id=scope_id,
+            line_number=line_number,
+            condition_str=condition_str,
+            condition_result=condition_result,
         )
         return branch_execution
 
