@@ -1,196 +1,30 @@
-import operator
-from abc import ABC, abstractmethod
-from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
+from src.core.query_engine.pipeline_steps import (
+    DistinctStep,
+    FullOuterJoinStep,
+    GroupByStep,
+    InnerJoinStep,
+    LeftJoinStep,
+    LimitStep,
+    MapStep,
+    OffsetStep,
+    OrderByStep,
+    PipelineStep,
+    QueryCondition,
+    ReduceStep,
+    RightJoinStep,
+    SelectStep,
+    WhereStep,
+)
 from src.core.query_engine.query_engine_exception import (
-    InvalidOperatorError,
     QueryEngineError,
 )
-from src.core.query_engine.utils import get_field_value
 from src.models.tracer_models import (
     ExecutionContext,
     StatementExecution,
     VariableSnapshot,
-)
-
-
-class QueryCondition:
-    """Represents a single WHERE query condition."""
-
-    def __init__(self, field: str, op: str, value: Any):
-        self.field = field
-        self.op = op
-        self.value = value
-
-        self.op_map: dict[str, Callable[[Any, Any], bool]] = {
-            "==": operator.eq,
-            "!=": operator.ne,
-            "<": operator.lt,
-            "<=": operator.le,
-            ">": operator.gt,
-            ">=": operator.ge,
-            "in": lambda x, y: x in y,
-            "not_in": lambda x, y: x not in y,
-        }
-
-    def evaluate(self, obj: StatementExecution | VariableSnapshot) -> bool:
-        """Evaluate condition against an object."""
-        try:
-            field_value = get_field_value(obj, self.field)
-
-            op_func = self.op_map.get(self.op)
-            if not op_func:
-                raise InvalidOperatorError(self.op)
-
-            return op_func(field_value, self.value)
-        except (TypeError, KeyError):
-            return False
-
-
-class PipelineStepBase(ABC):
-    @abstractmethod
-    def apply(self, items: list[Any]) -> list[Any]:
-        """Apply this pipeline step to the items."""
-        pass
-
-
-@dataclass
-class WhereStep(PipelineStepBase):
-    conditions: list[QueryCondition]
-
-    def apply(self, items: list[Any]) -> list[Any]:
-        return [
-            item
-            for item in items
-            if any(cond.evaluate(item) for cond in self.conditions)
-        ]
-
-
-@dataclass
-class SelectStep(PipelineStepBase):
-    fields: list[str]
-
-    def apply(self, items: list[Any]) -> list[Any]:
-        if len(self.fields) == 1:
-            result = [get_field_value(item, self.fields[0]) for item in items]
-        else:
-            result = [
-                {field: get_field_value(item, field) for field in self.fields}
-                for item in items
-            ]
-        return result
-
-
-@dataclass
-class MapStep(PipelineStepBase):
-    func: Callable[[Any], Any]
-
-    def apply(self, items: list[Any]) -> list[Any]:
-        return [self.func(item) for item in items]
-
-
-@dataclass
-class ReduceStep(PipelineStepBase):
-    def apply(self, items: list[Any]) -> list[Any]:
-        reduced_result: list[Any] = []
-        for item in items:
-            if isinstance(item, list):
-                reduced_result.extend(cast(list[Any], item))
-            else:
-                reduced_result.append(item)
-        return reduced_result
-
-
-@dataclass
-class DistinctStep(PipelineStepBase):
-    def apply(self, items: list[Any]) -> list[Any]:
-        seen: set[Any] = set()
-        distinct_result: list[Any] = []
-        for item in items:
-            try:
-                if item not in seen:
-                    seen.add(item)
-                    distinct_result.append(item)
-            except TypeError:
-                # Handle unhashable types
-                if item not in distinct_result:
-                    distinct_result.append(item)
-        return distinct_result
-
-
-@dataclass
-class OrderByStep(PipelineStepBase):
-    field: str
-    is_ascending: bool = True
-
-    def apply(self, items: list[Any]) -> list[Any]:
-        return sorted(
-            items,
-            key=lambda item: get_field_value(item, self.field),
-            reverse=not self.is_ascending,
-        )
-
-
-@dataclass
-class GroupByStep(PipelineStepBase):
-    group_fields: list[str]
-    aggregations: dict[str, Callable[[list[Any]], Any]]
-
-    def apply(self, items: list[Any]) -> list[Any]:
-        if not self.aggregations:
-            raise QueryEngineError(
-                "At least one aggregation function must be specified for group_by."
-            )
-
-        if self.group_fields:
-            grouped_items: dict[tuple[Any, ...], list[Any]] = defaultdict(list)
-            for item in items:
-                key = tuple(get_field_value(item, field) for field in self.group_fields)
-                grouped_items[key].append(item)
-        else:
-            grouped_items = {(): items}
-
-        aggregated_result: list[dict[str, Any]] = []
-        for key, group in grouped_items.items():
-            agg_result = {
-                field: value
-                for field, value in zip(self.group_fields, key, strict=True)
-            }
-            for agg_name, agg_func in self.aggregations.items():
-                agg_result[agg_name] = agg_func(group)
-            aggregated_result.append(agg_result)
-        return aggregated_result
-
-
-@dataclass
-class OffsetStep(PipelineStepBase):
-    offset: int
-
-    def apply(self, items: list[Any]) -> list[Any]:
-        return items[self.offset :]
-
-
-@dataclass
-class LimitStep(PipelineStepBase):
-    limit: int
-
-    def apply(self, items: list[Any]) -> list[Any]:
-        return items[: self.limit]
-
-
-PipelineStep = (
-    WhereStep
-    | SelectStep
-    | MapStep
-    | ReduceStep
-    | DistinctStep
-    | OrderByStep
-    | GroupByStep
-    | OffsetStep
-    | LimitStep
 )
 
 
@@ -277,6 +111,78 @@ class Query:
         if limit <= 0:
             raise QueryEngineError("Limit must be positive.")
         self.pipeline.append(LimitStep(limit=limit))
+        return self
+
+    def inner_join(
+        self,
+        other_items: list[Any],
+        conditions: Callable[[Any, Any], bool],
+        left_alias: str,
+        right_alias: str,
+    ) -> "Query":
+        """Perform an inner join with another set of items."""
+        self.pipeline.append(
+            InnerJoinStep(
+                other_items=other_items,
+                conditions=conditions,
+                left_alias=left_alias,
+                right_alias=right_alias,
+            )
+        )
+        return self
+
+    def left_join(
+        self,
+        other_items: list[Any],
+        conditions: Callable[[Any, Any], bool],
+        left_alias: str,
+        right_alias: str,
+    ) -> "Query":
+        """Perform a left join with another set of items."""
+        self.pipeline.append(
+            LeftJoinStep(
+                other_items=other_items,
+                conditions=conditions,
+                left_alias=left_alias,
+                right_alias=right_alias,
+            )
+        )
+        return self
+
+    def right_join(
+        self,
+        other_items: list[Any],
+        conditions: Callable[[Any, Any], bool],
+        left_alias: str,
+        right_alias: str,
+    ) -> "Query":
+        """Perform a right join with another set of items."""
+        self.pipeline.append(
+            RightJoinStep(
+                other_items=other_items,
+                conditions=conditions,
+                left_alias=left_alias,
+                right_alias=right_alias,
+            )
+        )
+        return self
+
+    def full_outer_join(
+        self,
+        other_items: list[Any],
+        conditions: Callable[[Any, Any], bool],
+        left_alias: str,
+        right_alias: str,
+    ) -> "Query":
+        """Perform a full outer join with another set of items."""
+        self.pipeline.append(
+            FullOuterJoinStep(
+                other_items=other_items,
+                conditions=conditions,
+                left_alias=left_alias,
+                right_alias=right_alias,
+            )
+        )
         return self
 
     def _apply_pipeline(
