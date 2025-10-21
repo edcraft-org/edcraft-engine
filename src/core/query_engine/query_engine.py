@@ -85,15 +85,20 @@ class Query:
         self.pipeline.append(OrderByStep(field=field, is_ascending=is_ascending))
         return self
 
-    def group_by(self, *fields: str) -> "Query":
-        if not fields:
+    def group_by(self, *fields: str, **kwargs: str) -> "Query":
+        if not fields and not kwargs:
             raise QueryEngineError("At least one field must be specified for group_by.")
-        self.pipeline.append(GroupByStep(group_fields=list(fields), aggregations={}))
+
+        group_fields: dict[str, str] = kwargs
+        for field in fields:
+            group_fields[field] = field
+
+        self.pipeline.append(GroupByStep(group_fields=group_fields, aggregations={}))
         return self
 
     def agg(self, **aggregations: Callable[[list[Any]], Any]) -> "Query":
         if not self.pipeline or not isinstance(self.pipeline[-1], GroupByStep):
-            self.pipeline.append(GroupByStep([], aggregations=aggregations))
+            self.pipeline.append(GroupByStep(dict(), aggregations=aggregations))
         else:
             group_step = self.pipeline[-1]
             group_step.aggregations.update(aggregations)

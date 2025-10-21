@@ -141,7 +141,7 @@ class OrderByStep(PipelineStepBase):
 
 @dataclass
 class GroupByStep(PipelineStepBase):
-    group_fields: list[str]
+    group_fields: dict[str, str]
     aggregations: dict[str, Callable[[list[Any]], Any]]
 
     @override
@@ -154,7 +154,9 @@ class GroupByStep(PipelineStepBase):
         if self.group_fields:
             grouped_items: dict[tuple[Any, ...], list[Any]] = defaultdict(list)
             for item in items:
-                key = tuple(get_field_value(item, field) for field in self.group_fields)
+                key = tuple(
+                    get_field_value(item, field) for field in self.group_fields.values()
+                )
                 grouped_items[key].append(item)
         else:
             grouped_items = {(): items}
@@ -163,7 +165,7 @@ class GroupByStep(PipelineStepBase):
         for key, group in grouped_items.items():
             agg_result = {
                 field: value
-                for field, value in zip(self.group_fields, key, strict=True)
+                for field, value in zip(self.group_fields.keys(), key, strict=True)
             }
             for agg_name, agg_func in self.aggregations.items():
                 agg_result[agg_name] = agg_func(group)
@@ -310,8 +312,6 @@ class FullOuterJoinStep(JoinStep):
                 results.append(self._create_joined_result(None, right_item))
 
         return results
-
-
 
 
 PipelineStep = (

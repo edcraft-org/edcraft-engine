@@ -113,6 +113,7 @@ class StatementExecutionTracker:
 class VariableSnapshot:
     """Records a variable's value at a specific point in execution."""
 
+    var_id: int
     name: str
     value: Any
     access_path: str
@@ -148,6 +149,7 @@ class ExecutionContext:
 
         self._execution_counter: int = 0  # 0 represents global scope
         self._scope_counter = 0
+        self._var_id = 0
 
         self.global_scope = Scope("global", 0)
         self.scope_stack.append(self.global_scope)
@@ -256,7 +258,9 @@ class ExecutionContext:
             self.current_execution.execution_id if self.current_execution else 0
         )
         scope_id = self.current_scope.scope_id
+        self._var_id += 1
         snapshot = VariableSnapshot(
+            var_id=self._var_id,
             name=name,
             value=value,
             access_path=access_path,
