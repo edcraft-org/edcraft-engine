@@ -23,6 +23,8 @@ class Scope:
 
 @dataclass
 class CodeElement:
+    id: int
+    type: str
     lineno: int
     scope: Scope
     parent: "CodeElement | None"
@@ -73,11 +75,11 @@ class Function(CodeElement):
 
 @dataclass
 class Loop(CodeElement):
-    type: str
+    loop_type: str
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        if self.type not in {"for", "while"}:
+        if self.loop_type not in {"for", "while"}:
             raise ValueError("Loop type must be either 'for' or 'while'")
 
 
@@ -90,3 +92,6 @@ class Branch(CodeElement):
 class CodeAnalysis:
     root_scope: Scope
     root_element: CodeElement
+    functions: list[Function]
+    loops: list[Loop]
+    branches: list[Branch]

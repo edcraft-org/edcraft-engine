@@ -16,11 +16,20 @@ class StaticAnalyser(ast.NodeVisitor):
     def __init__(self) -> None:
         self.root_scope = Scope()
         self.root_element = CodeElement(
-            lineno=0, scope=self.root_scope, parent=None, children=[]
+            id=0,
+            type="module",
+            lineno=0,
+            scope=self.root_scope,
+            parent=None,
+            children=[],
         )
 
         self.current_scope = self.root_scope
         self.current_element = self.root_element
+
+        self.functions: list[Function] = []
+        self.loops: list[Loop] = []
+        self.branches: list[Branch] = []
 
     def analyse(self, source_code: str) -> CodeAnalysis:
         """Analyse the given source code and return the code analysis."""
@@ -33,6 +42,9 @@ class StaticAnalyser(ast.NodeVisitor):
         return CodeAnalysis(
             root_scope=self.root_scope,
             root_element=self.root_element,
+            functions=self.functions,
+            loops=self.loops,
+            branches=self.branches,
         )
 
     def _enter_scope(self) -> None:
@@ -50,6 +62,49 @@ class StaticAnalyser(ast.NodeVisitor):
         if self.current_element.parent is not None:
             self.current_element = self.current_element.parent
 
+    def _record_function(
+        self, func_name: str, lineno: int, is_definition: bool
+    ) -> Function:
+        func = Function(
+            id=len(self.functions),
+            type="function",
+            lineno=lineno,
+            scope=self.current_scope,
+            parent=self.current_element,
+            children=[],
+            name=func_name,
+            parameters=[],
+            is_definition=is_definition,
+        )
+        self.functions.append(func)
+        return func
+
+    def _record_loop(self, loop_type: str, lineno: int) -> Loop:
+        loop = Loop(
+            id=len(self.loops),
+            type="loop",
+            lineno=lineno,
+            scope=self.current_scope,
+            parent=self.current_element,
+            children=[],
+            loop_type=loop_type,
+        )
+        self.loops.append(loop)
+        return loop
+
+    def _record_branch(self, condition: str, lineno: int) -> Branch:
+        branch = Branch(
+            id=len(self.branches),
+            type="branch",
+            lineno=lineno,
+            scope=self.current_scope,
+            parent=self.current_element,
+            children=[],
+            condition=condition,
+        )
+        self.branches.append(branch)
+        return branch
+
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self._enter_scope()
         self.generic_visit(node)
@@ -64,16 +119,10 @@ class StaticAnalyser(ast.NodeVisitor):
             self.current_scope.variables.add(arg)
 
         # Record function information
-        function_element = Function(
-            lineno=node.lineno,
-            scope=self.current_scope,
-            parent=self.current_element,
-            children=[],
-            name=node.name,
-            parameters=parameters,
-            is_definition=True,
+        func = self._record_function(
+            func_name=node.name, lineno=node.lineno, is_definition=True
         )
-        self._enter_code_block(function_element)
+        self._enter_code_block(func)
 
         self.generic_visit(node)
         self._leave_code_block()
@@ -84,13 +133,9 @@ class StaticAnalyser(ast.NodeVisitor):
         func_name = self._get_func_name(node.func)
 
         # Record function information
-        Function(
+        self._record_function(
+            func_name=func_name,
             lineno=node.lineno,
-            scope=self.current_scope,
-            parent=self.current_element,
-            children=[],
-            name=func_name,
-            parameters=[],
             is_definition=False,
         )
         self.generic_visit(node)
@@ -104,14 +149,8 @@ class StaticAnalyser(ast.NodeVisitor):
         return "<unknown>"
 
     def visit_For(self, node: ast.For) -> None:
-        loop_element = Loop(
-            lineno=node.lineno,
-            scope=self.current_scope,
-            parent=self.current_element,
-            children=[],
-            type="for",
-        )
-        self._enter_code_block(loop_element)
+        loop = self._record_loop("for", node.lineno)
+        self._enter_code_block(loop)
 
         # Record variables assigned in the for loop target
         variables = self._extract_names(node.target)
@@ -122,27 +161,15 @@ class StaticAnalyser(ast.NodeVisitor):
         self._leave_code_block()
 
     def visit_While(self, node: ast.While) -> None:
-        loop_element = Loop(
-            lineno=node.lineno,
-            scope=self.current_scope,
-            parent=self.current_element,
-            children=[],
-            type="while",
-        )
-        self._enter_code_block(loop_element)
+        loop = self._record_loop("while", node.lineno)
+        self._enter_code_block(loop)
 
         self.generic_visit(node)
         self._leave_code_block()
 
     def visit_If(self, node: ast.If) -> None:
-        branch_element = Branch(
-            lineno=node.lineno,
-            scope=self.current_scope,
-            parent=self.current_element,
-            children=[],
-            condition=ast.unparse(node.test),
-        )
-        self._enter_code_block(branch_element)
+        branch = self._record_branch(ast.unparse(node.test), node.lineno)
+        self._enter_code_block(branch)
 
         self.generic_visit(node)
         self._leave_code_block()
