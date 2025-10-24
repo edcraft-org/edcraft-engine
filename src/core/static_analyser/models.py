@@ -95,3 +95,13 @@ class CodeAnalysis:
     functions: list[Function]
     loops: list[Loop]
     branches: list[Branch]
+
+    @property
+    def variables(self) -> set[str]:
+        stack = [self.root_scope]
+        variables: set[str] = set()
+        while stack:
+            scope = stack.pop()
+            variables.update(scope.variables)
+            stack.extend(scope.children)
+        return variables
