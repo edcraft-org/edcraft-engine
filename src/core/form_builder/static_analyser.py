@@ -1,6 +1,6 @@
 import ast
 
-from src.core.static_analyser.models import (
+from src.models.static_analyser_models import (
     Branch,
     CodeAnalysis,
     CodeElement,

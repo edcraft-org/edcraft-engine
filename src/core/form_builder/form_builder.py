@@ -1,4 +1,4 @@
-from src.core.form_builder.models import (
+from src.models.form_models import (
     BranchElement,
     CodeInfo,
     CodeTree,
@@ -8,7 +8,7 @@ from src.core.form_builder.models import (
     FunctionElement,
     LoopElement,
 )
-from src.core.static_analyser.models import CodeAnalysis, CodeElement
+from src.models.static_analyser_models import CodeAnalysis, CodeElement
 
 
 class FormBuilder:

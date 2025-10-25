@@ -3,8 +3,8 @@ import codecs
 from fastapi import APIRouter
 
 from src.core.form_builder.form_builder import FormBuilder
-from src.core.form_builder.models import FormSchema
-from src.core.static_analyser.static_analyser import StaticAnalyser
+from src.core.form_builder.static_analyser import StaticAnalyser
+from src.models.form_models import FormSchema
 
 router = APIRouter(prefix="/question-generation")
 
