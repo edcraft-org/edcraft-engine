@@ -4,9 +4,10 @@ from fastapi import APIRouter
 
 from src.core.form_builder.form_builder import FormBuilder
 from src.core.form_builder.static_analyser import StaticAnalyser
-from src.models.form_models import FormSchema
-from src.models.api_models import GenerateQuestionRequest, GenerateQuestionResponse
+from src.core.question_generator.query_generator import QueryGenerator
 from src.core.step_tracer.step_tracer import StepTracer
+from src.models.api_models import GenerateQuestionRequest, GenerateQuestionResponse
+from src.models.form_models import FormSchema
 
 router = APIRouter(prefix="/question-generation")
 
@@ -47,14 +48,19 @@ async def generate_question(
         Generated question and answer.
     """
     # Execute code with step tracing to gather execution data
+    request.code = codecs.decode(request.code, "unicode_escape")
+    code_to_execute = f"{request.code}\n\n# Execute the function\n{request.algorithm_input.entry_function}(**{request.algorithm_input.test_data})"
+
     step_tracer = StepTracer()
-    transformed_code = step_tracer.transform_code(request.code)
-    step_tracer.execute_transformed_code(transformed_code)
+    transformed_code = step_tracer.transform_code(code_to_execute)
+    exec_ctx = step_tracer.execute_transformed_code(transformed_code)
 
     # Generate Question
     question = "<Question Text Generation: Work in Progress>"
 
     # Generate Answer
-    answer = "<Answer Generation: Work in Progress>"
+    query = QueryGenerator(exec_ctx).generate_query(request)
+    query_results = query.execute()
+    answer = f"{query_results}"
 
     return GenerateQuestionResponse(question=question, answer=answer)

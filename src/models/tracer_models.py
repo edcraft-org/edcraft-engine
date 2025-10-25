@@ -54,7 +54,7 @@ class LoopIteration(StatementExecution):
 class FunctionCall(StatementExecution):
     """Records function call execution."""
 
-    func_name: str
+    name: str
     func_full_name: str
     func_call_exec_ctx_id: int
     func_def_line_num: int | None = None
@@ -231,7 +231,7 @@ class ExecutionContext:
             execution_id=execution_id,
             scope_id=scope_id,
             line_number=line_number,
-            func_name=func_name,
+            name=func_name,
             func_full_name=func_full_name,
             func_call_exec_ctx_id=func_call_exec_ctx_id,
         )

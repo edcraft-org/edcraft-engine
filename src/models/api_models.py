@@ -4,19 +4,20 @@ from pydantic import BaseModel, Field
 
 # Type aliases for clarity
 TargetElementType = Literal["function", "loop", "branch", "variable"]
-TargetModifier = Literal["arguments", "return_value"]
 OutputType = Literal["list", "count", "first", "last"]
 QuestionType = Literal["mcq", "mrq", "short_answer"]
-ScopeModifier = Literal["loop_iterations", "branch_true", "branch_false"]
+TargetModifier = Literal[
+    "arguments", "return_value", "loop_iterations", "branch_true", "branch_false"
+]
 
 
-class ScopePathItem(BaseModel):
-    """Represents a single element in the scope path (breadcrumb navigation)."""
+class TargetElement(BaseModel):
+    """Represents a single element in the target path."""
 
     type: TargetElementType = Field(
-        ..., description="Type of the scope element (function, loop, branch, variable)"
+        ..., description="Type of the target element (function, loop, branch, variable)"
     )
-    id: int = Field(
+    id: int | list[int] = Field(
         ...,
         description="Index of the element in the respective array "
         "(functions/loops/branches)",
@@ -27,28 +28,20 @@ class ScopePathItem(BaseModel):
     line_number: int | None = Field(
         None, description="Line number where the element appears"
     )
-    modifier: ScopeModifier | None = Field(
-        None,
-        description="Modifier for loops and branches "
-        "(e.g., 'loop_iterations', 'branch_true')",
-    )
-
-
-class TargetSelection(BaseModel):
-    """Defines the target element to query in the algorithm."""
-
-    type: TargetElementType = Field(
-        ..., description="Type of the target element (function, loop, branch, variable)"
-    )
-    element_id: int | list[int] = Field(..., description="Single ID or array of IDs")
-    name: str | None = Field(None, description="Name of the target element")
-    line_number: int | None = Field(
-        None, description="Line number of the target element"
-    )
-    scope_path: list[ScopePathItem] = Field(
-        ..., description="Parent selections leading to this target"
-    )
     modifier: TargetModifier | None = Field(None, description="Modifier for target")
+
+    def __post_init__(self) -> None:
+        if not self.modifier:
+            return
+
+        if self.modifier == "loop_iterations" and self.type != "loop":
+            raise ValueError("Loop iterations modifier is only valid for loops.")
+
+        if self.modifier in ("branch_true", "branch_false") and self.type != "branch":
+            raise ValueError("Branch modifiers are only valid for branches.")
+
+        if self.modifier in ("arguments", "return_value") and self.type != "function":
+            raise ValueError("Function modifiers are only valid for functions.")
 
 
 class AlgorithmInput(BaseModel):
@@ -66,8 +59,8 @@ class GenerateQuestionRequest(BaseModel):
     """Request to generate a question based on form selections."""
 
     code: str = Field(..., description="Original algorithm source code")
-    target: TargetSelection = Field(
-        ..., description="The target element to query in the algorithm"
+    target: list[TargetElement] = Field(
+        ..., description="The target elements to query in the algorithm"
     )
     output_type: OutputType = Field(
         ..., description="Type of output to query (list, count, first, last)"
