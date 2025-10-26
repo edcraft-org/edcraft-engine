@@ -5,15 +5,21 @@ from fastapi import APIRouter
 from src.core.form_builder.form_builder import FormBuilder
 from src.core.form_builder.static_analyser import StaticAnalyser
 from src.core.question_generator.query_generator import QueryGenerator
+from src.core.question_generator.text_generator import TextGenerator
 from src.core.step_tracer.step_tracer import StepTracer
-from src.models.api_models import GenerateQuestionRequest, GenerateQuestionResponse
+from src.models.api_models import (
+    AnalyseCodeRequest,
+    GenerateQuestionRequest,
+    GenerateQuestionResponse,
+)
 from src.models.form_models import FormSchema
 
 router = APIRouter(prefix="/question-generation")
 
 
 @router.post("/analyse-code", response_model=FormSchema)
-async def analyse_code(code: str) -> FormSchema:
+async def analyse_code(request: AnalyseCodeRequest) -> FormSchema:
+    code = request.code
     code = codecs.decode(code, "unicode_escape")
     """
     Analyse the provided code and generate a form schema based on the analysis.
@@ -56,7 +62,8 @@ async def generate_question(
     exec_ctx = step_tracer.execute_transformed_code(transformed_code)
 
     # Generate Question
-    question = "<Question Text Generation: Work in Progress>"
+    text_generator = TextGenerator()
+    question = text_generator.generate_question(request)
 
     # Generate Answer
     query = QueryGenerator(exec_ctx).generate_query(request)

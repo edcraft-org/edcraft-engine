@@ -11,6 +11,10 @@ TargetModifier = Literal[
 ]
 
 
+class AnalyseCodeRequest(BaseModel):
+    code: str = Field(..., description="The code to be analysed")
+
+
 class TargetElement(BaseModel):
     """Represents a single element in the target path."""
 
