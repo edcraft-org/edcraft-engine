@@ -35,7 +35,12 @@ class QueryGenerator:
             query = query.where(field="stmt_type", op="==", value=target.type)
 
             if target.name is not None:
-                query = query.where(field="name", op="==", value=target.name)
+                if target.type == "branch":
+                    query = query.where(
+                        field="condition_str", op="==", value=target.name
+                    )
+                else:
+                    query = query.where(field="name", op="==", value=target.name)
 
             if target.line_number is not None:
                 query = query.where(
