@@ -7,6 +7,9 @@ from src.core.question_generator.distractor_strategies.base_strategy import (
 from src.core.question_generator.distractor_strategies.output_modification_strategy import (
     OutputModificationStrategy,
 )
+# from src.core.question_generator.distractor_strategies.query_variation_strategy import (
+#     QueryVariationStrategy,
+# )
 from src.models.api_models import GenerateQuestionRequest
 from src.models.tracer_models import ExecutionContext
 
@@ -21,6 +24,7 @@ class DistractorGenerator:
         self.exec_ctx = exec_ctx
         self.request = request
         self.strategies = strategies or [
+            # QueryVariationStrategy(), # todo: re-enable after enhancing
             OutputModificationStrategy(),
         ]
 
