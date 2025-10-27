@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from src.core.form_builder.form_builder import FormBuilder
 from src.core.form_builder.static_analyser import StaticAnalyser
+from src.core.question_generator.distractor_generator import DistractorGenerator
 from src.core.question_generator.query_generator import QueryGenerator
 from src.core.question_generator.text_generator import TextGenerator
 from src.core.step_tracer.step_tracer import StepTracer
@@ -69,5 +70,18 @@ async def generate_question(
     query = QueryGenerator(exec_ctx).generate_query(request)
     query_results = query.execute()
     answer = f"{query_results}"
+
+    # Generate Distractors and include in response if needed (e.g., for MCQ/MRQ)
+    if request.question_type in ("mcq", "mrq"):
+        distractor_generator = DistractorGenerator(exec_ctx, request)
+        options, correct_indices = distractor_generator.create_options(
+            answers=query_results
+        )
+        return GenerateQuestionResponse(
+            question=question,
+            answer=answer,
+            options=options,
+            correct_indices=correct_indices,
+        )
 
     return GenerateQuestionResponse(question=question, answer=answer)
