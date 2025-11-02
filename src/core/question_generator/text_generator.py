@@ -12,7 +12,7 @@ class TextGenerator:
         target = self._build_target(request.target[-1], request.output_type)
         question_type = self._build_question_type(request.question_type)
         input_data_phrase = self._build_input_data_phrase(
-            request.algorithm_input.test_data
+            request.algorithm_input.input_data
         )
 
         # Compose the final question

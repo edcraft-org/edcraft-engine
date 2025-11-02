@@ -54,7 +54,7 @@ class AlgorithmInput(BaseModel):
     entry_function: str = Field(
         ..., description="Name of the entry point function to execute"
     )
-    test_data: dict[str, Any] = Field(
+    input_data: dict[str, Any] = Field(
         ..., description="Input parameters for the algorithm as key-value pairs"
     )
 

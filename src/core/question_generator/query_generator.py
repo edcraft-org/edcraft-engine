@@ -39,6 +39,10 @@ class QueryGenerator:
                     query = query.where(
                         field="condition_str", op="==", value=target.name
                     )
+                elif target.type == "function":
+                    query = query.where(
+                        field="func_full_name", op="==", value=target.name
+                    )
                 else:
                     query = query.where(field="name", op="==", value=target.name)
 

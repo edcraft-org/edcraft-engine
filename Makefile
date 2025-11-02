@@ -1,4 +1,4 @@
-.PHONY: install test lint type-check all-checks clean
+.PHONY: install test lint type-check all-checks clean dev
 
 install:
 	uv sync
@@ -26,3 +26,6 @@ clean-tool:
 update:
 	uv lock --upgrade
 	uv sync
+
+dev:
+	uvicorn src.api.app:app --reload --reload-dir src --host 0.0.0.0 --port 8000

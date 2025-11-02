@@ -173,7 +173,7 @@ class QueryVariationStrategy(DistractorStrategy):
         exec_ctx: ExecutionContext,
         modified_target: list[TargetElement],
         num_distractors: int,
-    ):
+    ) -> None:
         try:
             modified_query_result = self._run_modified_query(
                 request, exec_ctx, modified_target_path=modified_target

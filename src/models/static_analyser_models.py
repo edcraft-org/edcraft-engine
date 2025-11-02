@@ -76,6 +76,7 @@ class Function(CodeElement):
 @dataclass
 class Loop(CodeElement):
     loop_type: str
+    condition: str
 
     def __post_init__(self) -> None:
         super().__post_init__()

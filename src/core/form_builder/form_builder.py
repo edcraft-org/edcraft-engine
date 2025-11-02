@@ -42,6 +42,7 @@ class FormBuilder:
                     type="loop",
                     line_number=loop.lineno,
                     loop_type=loop.loop_type,
+                    condition=loop.condition,
                 )
             )
 

@@ -56,7 +56,7 @@ async def generate_question(
     """
     # Execute code with step tracing to gather execution data
     request.code = codecs.decode(request.code, "unicode_escape")
-    code_to_execute = f"{request.code}\n\n# Execute the function\n{request.algorithm_input.entry_function}(**{request.algorithm_input.test_data})"
+    code_to_execute = f"{request.code}\n\n# Execute the function\n{request.algorithm_input.entry_function}(**{request.algorithm_input.input_data})"
 
     step_tracer = StepTracer()
     transformed_code = step_tracer.transform_code(code_to_execute)
