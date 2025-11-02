@@ -63,7 +63,11 @@ class StaticAnalyser(ast.NodeVisitor):
             self.current_element = self.current_element.parent
 
     def _record_function(
-        self, func_name: str, lineno: int, is_definition: bool
+        self,
+        func_name: str,
+        lineno: int,
+        is_definition: bool,
+        access_chain: list[str] | None = None,
     ) -> Function:
         func = Function(
             id=len(self.functions),
@@ -72,14 +76,14 @@ class StaticAnalyser(ast.NodeVisitor):
             scope=self.current_scope,
             parent=self.current_element,
             children=[],
-            name=func_name,
+            name=".".join(access_chain) if access_chain else func_name,
             parameters=[],
             is_definition=is_definition,
         )
         self.functions.append(func)
         return func
 
-    def _record_loop(self, loop_type: str, lineno: int) -> Loop:
+    def _record_loop(self, loop_type: str, condition: str, lineno: int) -> Loop:
         loop = Loop(
             id=len(self.loops),
             type="loop",
@@ -88,6 +92,7 @@ class StaticAnalyser(ast.NodeVisitor):
             parent=self.current_element,
             children=[],
             loop_type=loop_type,
+            condition=condition,
         )
         self.loops.append(loop)
         return loop
@@ -130,15 +135,24 @@ class StaticAnalyser(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         """Track function calls and add to current container."""
-        func_name = self._get_func_name(node.func)
-
         # Record function information
         self._record_function(
-            func_name=func_name,
+            func_name=self._get_func_name(node.func),
             lineno=node.lineno,
             is_definition=False,
+            access_chain=self._get_access_chain(node.func),
         )
         self.generic_visit(node)
+
+    def _get_access_chain(self, func: ast.expr) -> list[str]:
+        chain: list[str] = []
+        current = func
+        while isinstance(current, ast.Attribute):
+            chain.insert(0, current.attr)
+            current = current.value
+        if isinstance(current, ast.Name):
+            chain.insert(0, current.id)
+        return chain
 
     def _get_func_name(self, node: ast.expr) -> str:
         """Extract function name from call node."""
@@ -149,7 +163,13 @@ class StaticAnalyser(ast.NodeVisitor):
         return "<unknown>"
 
     def visit_For(self, node: ast.For) -> None:
-        loop = self._record_loop("for", node.lineno)
+        target_str = ast.unparse(node.target)
+        iter_str = ast.unparse(node.iter)
+        condition_str = f"{target_str} in {iter_str}"
+
+        loop = self._record_loop(
+            loop_type="for", condition=condition_str, lineno=node.lineno
+        )
         self._enter_code_block(loop)
 
         # Record variables assigned in the for loop target
@@ -161,7 +181,9 @@ class StaticAnalyser(ast.NodeVisitor):
         self._leave_code_block()
 
     def visit_While(self, node: ast.While) -> None:
-        loop = self._record_loop("while", node.lineno)
+        loop = self._record_loop(
+            loop_type="while", condition=ast.unparse(node.test), lineno=node.lineno
+        )
         self._enter_code_block(loop)
 
         self.generic_visit(node)

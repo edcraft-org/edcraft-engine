@@ -25,6 +25,7 @@ class LoopElement(BaseModel):
     type: str = Field("loop", description="Type of the code element.")
     line_number: int = Field(..., description="Line number where the loop is located.")
     loop_type: str = Field(..., description="Type of the loop (e.g., for, while).")
+    condition: str = Field(..., description="Condition of the loop.")
 
 
 class BranchElement(BaseModel):
