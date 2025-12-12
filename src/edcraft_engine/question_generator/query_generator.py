@@ -1,10 +1,7 @@
 from typing import Any
 
 from edcraft_engine.query_engine.query_engine import Query, QueryEngine
-from edcraft_engine.question_generator.models import (
-    GenerateQuestionRequest,
-    TargetElement,
-)
+from edcraft_engine.question_generator.models import OutputType, TargetElement
 from edcraft_engine.step_tracer.models import ExecutionContext
 
 
@@ -14,19 +11,21 @@ class QueryGenerator:
         self.exec_ctx_items = exec_ctx.execution_trace + exec_ctx.variables
         self.join_idx = 0
 
-    def generate_query(self, request: GenerateQuestionRequest) -> Query:
+    def generate_query(
+        self, target: list[TargetElement], output_type: OutputType
+    ) -> Query:
         """Generates a query based on the provided question request."""
 
         query = self.query_engine.create_query()
 
         # Select target
-        for target in request.target:
-            query = self._get_target(query, target)
+        for target_element in target:
+            query = self._get_target(query, target_element)
 
         # Apply output type
-        query = self._apply_output_type(query, request.output_type)
+        query = self._apply_output_type(query, output_type)
 
-        query = self._clean_output(query, request)
+        query = self._clean_output(query, target, output_type)
 
         return query
 
@@ -195,13 +194,15 @@ class QueryGenerator:
             )
         return query
 
-    def _clean_output(self, query: Query, request: GenerateQuestionRequest) -> Query:
-        if request.output_type == "count":
+    def _clean_output(
+        self, query: Query, target: list[TargetElement], output_type: OutputType
+    ) -> Query:
+        if output_type == "count":
             return query
 
         prefix = f"{self.join_idx}." if self.join_idx > 0 else ""
-        if len(request.target) > 0 and request.target[-1].type == "variable":
-            if request.target[-1].name is not None:
+        if len(target) > 0 and target[-1].type == "variable":
+            if target[-1].name is not None:
                 query = query.select(f"{prefix}value")
             else:
                 query = query.select(f"{prefix}name", f"{prefix}value")

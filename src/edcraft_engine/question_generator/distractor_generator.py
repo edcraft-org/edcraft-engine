@@ -11,7 +11,11 @@ from edcraft_engine.question_generator.distractor_strategies.output_modification
 # from edcraft_engine.question_generator.distractor_strategies.query_variation_strategy import (
 #     QueryVariationStrategy,
 # )
-from edcraft_engine.question_generator.models import GenerateQuestionRequest
+from edcraft_engine.question_generator.models import (
+    OutputType,
+    QuestionType,
+    TargetElement,
+)
 from edcraft_engine.step_tracer.models import ExecutionContext
 
 
@@ -19,11 +23,17 @@ class DistractorGenerator:
     def __init__(
         self,
         exec_ctx: ExecutionContext,
-        request: GenerateQuestionRequest,
+        target: list[TargetElement],
+        output_type: OutputType,
+        question_type: QuestionType,
+        num_distractors: int = 4,
         strategies: list[DistractorStrategy] | None = None,
     ):
         self.exec_ctx = exec_ctx
-        self.request = request
+        self.target = target
+        self.output_type: OutputType = output_type
+        self.question_type: QuestionType = question_type
+        self.num_distractors = num_distractors
         self.strategies = strategies or [
             # QueryVariationStrategy(), # todo: re-enable after enhancing
             OutputModificationStrategy(),
@@ -42,7 +52,7 @@ class DistractorGenerator:
             - correct_indices: Indices of correct answer(s) in the shuffled list
         """
 
-        correct_options = answers if self.request.question_type == "mrq" else [answers]
+        correct_options = answers if self.question_type == "mrq" else [answers]
         distractors = self.generate_distractors(correct_options)
         all_options = correct_options + distractors
         return self._shuffle(all_options, len(correct_options))
@@ -56,13 +66,15 @@ class DistractorGenerator:
             seen.add(str(option))
 
         for strategy in self.strategies:
-            if len(distractors) >= self.request.num_distractors:
+            if len(distractors) >= self.num_distractors:
                 break
             generated_distractors = strategy.generate(
                 correct_options=correct_options,
                 exec_ctx=self.exec_ctx,
-                request=self.request,
-                num_distractors=self.request.num_distractors,
+                target=self.target,
+                output_type=self.output_type,
+                question_type=self.question_type,
+                num_distractors=self.num_distractors,
             )
 
             for distractor in generated_distractors:
@@ -70,10 +82,10 @@ class DistractorGenerator:
                 if distractor is not None and distractor_str not in seen:
                     distractors.append(distractor)
                     seen.add(distractor_str)
-                if len(distractors) >= self.request.num_distractors:
+                if len(distractors) >= self.num_distractors:
                     break
 
-        return distractors[: self.request.num_distractors]
+        return distractors[: self.num_distractors]
 
     def _shuffle(
         self, options: list[Any], num_correct: int

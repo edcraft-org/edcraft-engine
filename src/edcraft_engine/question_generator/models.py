@@ -53,24 +53,3 @@ class AlgorithmInput(BaseModel):
     input_data: dict[str, Any] = Field(
         ..., description="Input parameters for the algorithm as key-value pairs"
     )
-
-
-class GenerateQuestionRequest(BaseModel):
-    """Request to generate a question based on form selections."""
-
-    code: str = Field(..., description="Original algorithm source code")
-    target: list[TargetElement] = Field(
-        ..., description="The target elements to query in the algorithm"
-    )
-    output_type: OutputType = Field(
-        ..., description="Type of output to query (list, count, first, last)"
-    )
-    question_type: QuestionType = Field(
-        ..., description="Type of question to generate (mcq, mrq, short_answer)"
-    )
-    algorithm_input: AlgorithmInput = Field(
-        ..., description="Input parameters for executing the algorithm"
-    )
-    num_distractors: int = Field(
-        default=4, description="Number of distractor options for MCQ/MRQ (default: 4)"
-    )

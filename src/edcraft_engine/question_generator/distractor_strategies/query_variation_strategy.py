@@ -5,8 +5,8 @@ from edcraft_engine.question_generator.distractor_strategies.base_strategy impor
     DistractorStrategy,
 )
 from edcraft_engine.question_generator.models import (
-    GenerateQuestionRequest,
     OutputType,
+    QuestionType,
     TargetElement,
     TargetModifier,
 )
@@ -22,25 +22,29 @@ class QueryVariationStrategy(DistractorStrategy):
         self,
         correct_options: list[Any],
         exec_ctx: ExecutionContext,
-        request: GenerateQuestionRequest,
+        target: list[TargetElement],
+        output_type: OutputType,
+        question_type: QuestionType,
         num_distractors: int,
     ) -> list[Any]:
         distractors: list[Any] = []
 
         # Vary output type
-        distractors.extend(self._generate_output_type_variations(exec_ctx, request))
+        distractors.extend(
+            self._generate_output_type_variations(exec_ctx, target, output_type)
+        )
 
         # Vary target path (remove context layers)
         distractors.extend(
             self._generate_target_path_variations(
-                correct_options, exec_ctx, request, num_distractors
+                correct_options, exec_ctx, target, output_type, num_distractors
             )
         )
 
         # Vary modifiers
         distractors.extend(
             self._generate_modifier_variations(
-                correct_options, exec_ctx, request, num_distractors
+                correct_options, exec_ctx, target, output_type, num_distractors
             )
         )
 
@@ -60,15 +64,16 @@ class QueryVariationStrategy(DistractorStrategy):
     def _generate_output_type_variations(
         self,
         exec_ctx: ExecutionContext,
-        request: GenerateQuestionRequest,
+        target: list[TargetElement],
+        output_type: OutputType,
     ) -> list[Any]:
         """Generate distractors by varying the output type."""
-        if request.output_type not in ("first", "last"):
+        if output_type not in ("first", "last"):
             return []
 
         try:
             modified_query_result = self._run_modified_query(
-                request, exec_ctx, modified_output_type="list"
+                target, output_type, exec_ctx, modified_output_type="list"
             )
             return modified_query_result
         except Exception:
@@ -78,22 +83,24 @@ class QueryVariationStrategy(DistractorStrategy):
         self,
         correct_answers: list[Any],
         exec_ctx: ExecutionContext,
-        request: GenerateQuestionRequest,
+        target: list[TargetElement],
+        output_type: OutputType,
         num_distractors: int,
     ) -> list[Any]:
         """Generate distractors by varying the target path (removing context layers)."""
         distractors: list[Any] = []
 
-        if len(request.target) <= 1:
+        if len(target) <= 1:
             # No context to remove
             return distractors
 
-        for i in range(len(request.target) - 1):
-            modified_target = request.target[:i] + request.target[i + 1 :]
+        for i in range(len(target) - 1):
+            modified_target = target[:i] + target[i + 1 :]
             self._run_and_clean_modified_query(
                 correct_answers[0],
                 distractors,
-                request,
+                target,
+                output_type,
                 exec_ctx,
                 modified_target,
                 num_distractors,
@@ -102,11 +109,12 @@ class QueryVariationStrategy(DistractorStrategy):
                 break
 
         # Only include final target element
-        modified_target = [request.target[-1]]
+        modified_target = [target[-1]]
         self._run_and_clean_modified_query(
             correct_answers[0],
             distractors,
-            request,
+            target,
+            output_type,
             exec_ctx,
             modified_target,
             num_distractors,
@@ -118,7 +126,8 @@ class QueryVariationStrategy(DistractorStrategy):
         self,
         correct_answers: list[Any],
         exec_ctx: ExecutionContext,
-        request: GenerateQuestionRequest,
+        target: list[TargetElement],
+        output_type: OutputType,
         num_distractors: int,
     ) -> list[Any]:
         """Generate distractors by varying modifiers"""
@@ -132,29 +141,37 @@ class QueryVariationStrategy(DistractorStrategy):
             "loop": ["loop_iterations"],
         }
 
-        for i, target in enumerate(request.target):
-            if target.modifier is not None and target.modifier in modifier_variations:
-                for new_modifier in modifier_variations[target.modifier]:
-                    modified_target = copy.deepcopy(request.target)
+        for i, target_element in enumerate(target):
+            if (
+                target_element.modifier is not None
+                and target_element.modifier in modifier_variations
+            ):
+                for new_modifier in modifier_variations[target_element.modifier]:
+                    modified_target = copy.deepcopy(target)
                     modified_target[i].modifier = new_modifier
                     self._run_and_clean_modified_query(
                         correct_answers[0],
                         distractors,
-                        request,
+                        target,
+                        output_type,
                         exec_ctx,
                         modified_target,
                         num_distractors,
                     )
                     if len(distractors) >= num_distractors:
                         break
-            if target.modifier is None and target.type in modifier_variations:
-                for new_modifier in modifier_variations[target.type]:
-                    modified_target = copy.deepcopy(request.target)
+            if (
+                target_element.modifier is None
+                and target_element.type in modifier_variations
+            ):
+                for new_modifier in modifier_variations[target_element.type]:
+                    modified_target = copy.deepcopy(target)
                     modified_target[i].modifier = new_modifier
                     self._run_and_clean_modified_query(
                         correct_answers[0],
                         distractors,
-                        request,
+                        target,
+                        output_type,
                         exec_ctx,
                         modified_target,
                         num_distractors,
@@ -169,14 +186,15 @@ class QueryVariationStrategy(DistractorStrategy):
         self,
         correct_answer: Any,
         distractors: list[Any],
-        request: GenerateQuestionRequest,
+        target: list[TargetElement],
+        output_type: OutputType,
         exec_ctx: ExecutionContext,
         modified_target: list[TargetElement],
         num_distractors: int,
     ) -> None:
         try:
             modified_query_result = self._run_modified_query(
-                request, exec_ctx, modified_target_path=modified_target
+                target, output_type, exec_ctx, modified_target_path=modified_target
             )
             for item in modified_query_result:
                 modified_item = self._match_answer_format(correct_answer, item)
@@ -188,19 +206,18 @@ class QueryVariationStrategy(DistractorStrategy):
 
     def _run_modified_query(
         self,
-        request: GenerateQuestionRequest,
+        target: list[TargetElement],
+        output_type: OutputType,
         exec_ctx: ExecutionContext,
         modified_output_type: OutputType | None = None,
         modified_target_path: list[TargetElement] | None = None,
     ) -> list[Any]:
-        modified_request = copy.deepcopy(request)
-        if modified_output_type:
-            modified_request.output_type = modified_output_type
-        if modified_target_path:
-            modified_request.target = modified_target_path
+        # Use modified values if provided, otherwise use original
+        final_output_type = modified_output_type if modified_output_type else output_type
+        final_target = modified_target_path if modified_target_path else target
 
         query_generator = QueryGenerator(exec_ctx)
-        query = query_generator.generate_query(modified_request)
+        query = query_generator.generate_query(final_target, final_output_type)
         result = query.execute()
         return result
 
