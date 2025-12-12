@@ -1,6 +1,6 @@
 import ast
 
-from edcraft_engine.models.static_analyser_models import (
+from edcraft_engine.static_analyser.models import (
     Branch,
     CodeAnalysis,
     CodeElement,

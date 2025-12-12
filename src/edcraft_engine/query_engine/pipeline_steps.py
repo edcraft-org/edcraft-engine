@@ -5,15 +5,15 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, cast, override
 
-from edcraft_engine.models.tracer_models import (
-    StatementExecution,
-    VariableSnapshot,
-)
 from edcraft_engine.query_engine.query_engine_exception import (
     InvalidOperatorError,
     QueryEngineError,
 )
 from edcraft_engine.query_engine.utils import get_field_value
+from edcraft_engine.step_tracer.models import (
+    StatementExecution,
+    VariableSnapshot,
+)
 
 
 class QueryCondition:

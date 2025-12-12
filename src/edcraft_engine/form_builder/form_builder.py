@@ -1,4 +1,4 @@
-from edcraft_engine.models.form_models import (
+from edcraft_engine.form_builder.models import (
     BranchElement,
     CodeInfo,
     CodeTree,
@@ -8,7 +8,7 @@ from edcraft_engine.models.form_models import (
     FunctionElement,
     LoopElement,
 )
-from edcraft_engine.models.static_analyser_models import CodeAnalysis, CodeElement
+from edcraft_engine.static_analyser.models import CodeAnalysis, CodeElement
 
 
 class FormBuilder:

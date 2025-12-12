@@ -1,6 +1,6 @@
 from typing import Any
 
-from edcraft_engine.models.question_models import (
+from edcraft_engine.question_generator.models import (
     GenerateQuestionRequest,
     QuestionType,
     TargetElement,

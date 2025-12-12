@@ -1,17 +1,17 @@
 import copy
 from typing import Any, cast, override
 
-from edcraft_engine.models.question_models import (
+from edcraft_engine.question_generator.distractor_strategies.base_strategy import (
+    DistractorStrategy,
+)
+from edcraft_engine.question_generator.models import (
     GenerateQuestionRequest,
     OutputType,
     TargetElement,
     TargetModifier,
 )
-from edcraft_engine.models.tracer_models import ExecutionContext
-from edcraft_engine.question_generator.distractor_strategies.base_strategy import (
-    DistractorStrategy,
-)
 from edcraft_engine.question_generator.query_generator import QueryGenerator
+from edcraft_engine.step_tracer.models import ExecutionContext
 
 
 class QueryVariationStrategy(DistractorStrategy):

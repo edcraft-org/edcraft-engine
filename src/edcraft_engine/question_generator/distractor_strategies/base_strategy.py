@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from edcraft_engine.models.question_models import GenerateQuestionRequest
-from edcraft_engine.models.tracer_models import ExecutionContext
+from edcraft_engine.question_generator.models import GenerateQuestionRequest
+from edcraft_engine.step_tracer.models import ExecutionContext
 
 
 class DistractorStrategy(ABC):
