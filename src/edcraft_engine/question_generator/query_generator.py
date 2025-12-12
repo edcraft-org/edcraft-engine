@@ -1,11 +1,11 @@
 from typing import Any
 
-from src.core.query_engine.query_engine import Query, QueryEngine
-from src.models.api_models import (
+from edcraft_engine.models.question_models import (
     GenerateQuestionRequest,
     TargetElement,
 )
-from src.models.tracer_models import ExecutionContext
+from edcraft_engine.models.tracer_models import ExecutionContext
+from edcraft_engine.query_engine.query_engine import Query, QueryEngine
 
 
 class QueryGenerator:

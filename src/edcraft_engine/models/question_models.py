@@ -11,10 +11,6 @@ TargetModifier = Literal[
 ]
 
 
-class AnalyseCodeRequest(BaseModel):
-    code: str = Field(..., description="The code to be analysed")
-
-
 class TargetElement(BaseModel):
     """Represents a single element in the target path."""
 
@@ -77,19 +73,4 @@ class GenerateQuestionRequest(BaseModel):
     )
     num_distractors: int = Field(
         default=4, description="Number of distractor options for MCQ/MRQ (default: 4)"
-    )
-
-
-class GenerateQuestionResponse(BaseModel):
-    """Response containing the generated question."""
-
-    question: str = Field(..., description="The generated question text")
-    answer: Any = Field(default=None, description="The answer to the question")
-    options: list[Any] | None = Field(
-        default=None,
-        description="Shuffled answer options for MCQ/MRQ including correct answer",
-    )
-    correct_indices: list[int] | None = Field(
-        default=None,
-        description="Indices of correct answer(s) in the options list for MCQ/MRQ",
     )

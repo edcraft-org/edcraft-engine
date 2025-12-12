@@ -1,17 +1,17 @@
 import random
 from typing import Any
 
-from src.core.question_generator.distractor_strategies.base_strategy import (
-    DistractorStrategy,
-)
-from src.core.question_generator.distractor_strategies.output_modification_strategy import (
-    OutputModificationStrategy,
-)
-# from src.core.question_generator.distractor_strategies.query_variation_strategy import (
+# from edcraft_engine.question_generator.distractor_strategies.query_variation_strategy import (
 #     QueryVariationStrategy,
 # )
-from src.models.api_models import GenerateQuestionRequest
-from src.models.tracer_models import ExecutionContext
+from edcraft_engine.models.question_models import GenerateQuestionRequest
+from edcraft_engine.models.tracer_models import ExecutionContext
+from edcraft_engine.question_generator.distractor_strategies.base_strategy import (
+    DistractorStrategy,
+)
+from edcraft_engine.question_generator.distractor_strategies.output_modification_strategy import (
+    OutputModificationStrategy,
+)
 
 
 class DistractorGenerator:

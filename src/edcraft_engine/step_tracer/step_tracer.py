@@ -1,9 +1,9 @@
 import ast
 from typing import Any
 
-from src.core.step_tracer.step_tracer_utils import StepTracerUtils
-from src.core.step_tracer.tracer_transformer import TracerTransformer
-from src.models.tracer_models import ExecutionContext
+from edcraft_engine.models.tracer_models import ExecutionContext
+from edcraft_engine.step_tracer.step_tracer_utils import StepTracerUtils
+from edcraft_engine.step_tracer.tracer_transformer import TracerTransformer
 
 
 class StepTracer:

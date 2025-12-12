@@ -1,6 +1,10 @@
 from typing import Any
 
-from src.models.api_models import GenerateQuestionRequest, QuestionType, TargetElement
+from edcraft_engine.models.question_models import (
+    GenerateQuestionRequest,
+    QuestionType,
+    TargetElement,
+)
 
 
 class TextGenerator:

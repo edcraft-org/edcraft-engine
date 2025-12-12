@@ -1,7 +1,12 @@
 from collections.abc import Callable
 from typing import Any
 
-from src.core.query_engine.pipeline_steps import (
+from edcraft_engine.models.tracer_models import (
+    ExecutionContext,
+    StatementExecution,
+    VariableSnapshot,
+)
+from edcraft_engine.query_engine.pipeline_steps import (
     DistinctStep,
     FullOuterJoinStep,
     GroupByStep,
@@ -18,13 +23,8 @@ from src.core.query_engine.pipeline_steps import (
     SelectStep,
     WhereStep,
 )
-from src.core.query_engine.query_engine_exception import (
+from edcraft_engine.query_engine.query_engine_exception import (
     QueryEngineError,
-)
-from src.models.tracer_models import (
-    ExecutionContext,
-    StatementExecution,
-    VariableSnapshot,
 )
 
 

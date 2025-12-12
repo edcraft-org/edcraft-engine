@@ -1,11 +1,13 @@
 from typing import Any
 
-from src.core.query_engine.query_engine_exception import InvalidFieldError
+from edcraft_engine.query_engine.query_engine_exception import InvalidFieldError
 
 
 def get_field_value(obj: Any, field_path: str) -> Any:
     """Extract field value from object."""
-    from src.core.query_engine.pipeline_steps import JoinResult  # Avoid circular import
+    from edcraft_engine.query_engine.pipeline_steps import (
+        JoinResult,  # Avoid circular import
+    )
 
     fields = field_path.split(".")
     curr_obj = obj
