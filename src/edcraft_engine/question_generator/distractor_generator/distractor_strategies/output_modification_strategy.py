@@ -1,14 +1,10 @@
 import random
 from typing import Any, cast, override
 
-from edcraft_engine.question_generator.distractor_strategies.base_strategy import (
+from edcraft_engine.question_generator.distractor_generator.distractor_strategies.base_strategy import (
     DistractorStrategy,
 )
-from edcraft_engine.question_generator.models import (
-    OutputType,
-    QuestionType,
-    TargetElement,
-)
+from edcraft_engine.question_generator.models import QuestionSpec
 from edcraft_engine.step_tracer.models import ExecutionContext
 
 
@@ -19,14 +15,12 @@ class OutputModificationStrategy(DistractorStrategy):
         self,
         correct_options: list[Any],
         exec_ctx: ExecutionContext,
-        target: list[TargetElement],
-        output_type: OutputType,
-        question_type: QuestionType,
+        question_spec: QuestionSpec,
         num_distractors: int,
     ) -> list[Any]:
-        if question_type == "mcq":
+        if question_spec.question_type == "mcq":
             return self._generate_mcq_distractors(correct_options[0], num_distractors)
-        elif question_type == "mrq":
+        elif question_spec.question_type == "mrq":
             return self._generate_mrq_distractors(correct_options, num_distractors)
         else:
             return []

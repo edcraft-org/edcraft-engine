@@ -1,8 +1,7 @@
 from typing import Any
 
 from edcraft_engine.question_generator.models import (
-    AlgorithmInput,
-    OutputType,
+    QuestionSpec,
     QuestionType,
     TargetElement,
 )
@@ -11,18 +10,18 @@ from edcraft_engine.question_generator.models import (
 class TextGenerator:
     def generate_question(
         self,
-        target: list[TargetElement],
-        output_type: OutputType,
-        question_type: QuestionType,
-        algorithm_input: AlgorithmInput,
+        question_spec: QuestionSpec,
+        input_data: dict[str, Any],
     ) -> str:
         """Generates a question text based on the provided request."""
 
         # Build the question parts
-        context = self._build_context(target[:-1])
-        target_phrase = self._build_target(target[-1], output_type)
-        question_type_phrase = self._build_question_type(question_type)
-        input_data_phrase = self._build_input_data_phrase(algorithm_input.input_data)
+        context = self._build_context(question_spec.target[:-1])
+        target_phrase = self._build_target(
+            question_spec.target[-1], question_spec.output_type
+        )
+        question_type_phrase = self._build_question_type(question_spec.question_type)
+        input_data_phrase = self._build_input_data_phrase(input_data)
 
         # Compose the final question
         question = f"{context}, {target_phrase}? {question_type_phrase}\nGiven input: {input_data_phrase}"

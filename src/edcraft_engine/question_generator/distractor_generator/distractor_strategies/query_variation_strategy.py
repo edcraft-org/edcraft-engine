@@ -1,16 +1,18 @@
 import copy
 from typing import Any, cast, override
 
-from edcraft_engine.question_generator.distractor_strategies.base_strategy import (
+from edcraft_engine.question_generator.distractor_generator.distractor_strategies.base_strategy import (
     DistractorStrategy,
 )
 from edcraft_engine.question_generator.models import (
     OutputType,
-    QuestionType,
+    QuestionSpec,
     TargetElement,
     TargetModifier,
 )
-from edcraft_engine.question_generator.query_generator import QueryGenerator
+from edcraft_engine.question_generator.query_generator.query_generator import (
+    QueryGenerator,
+)
 from edcraft_engine.step_tracer.models import ExecutionContext
 
 
@@ -22,29 +24,37 @@ class QueryVariationStrategy(DistractorStrategy):
         self,
         correct_options: list[Any],
         exec_ctx: ExecutionContext,
-        target: list[TargetElement],
-        output_type: OutputType,
-        question_type: QuestionType,
+        question_spec: QuestionSpec,
         num_distractors: int,
     ) -> list[Any]:
         distractors: list[Any] = []
 
         # Vary output type
         distractors.extend(
-            self._generate_output_type_variations(exec_ctx, target, output_type)
+            self._generate_output_type_variations(
+                exec_ctx, question_spec.target, question_spec.output_type
+            )
         )
 
         # Vary target path (remove context layers)
         distractors.extend(
             self._generate_target_path_variations(
-                correct_options, exec_ctx, target, output_type, num_distractors
+                correct_options,
+                exec_ctx,
+                question_spec.target,
+                question_spec.output_type,
+                num_distractors,
             )
         )
 
         # Vary modifiers
         distractors.extend(
             self._generate_modifier_variations(
-                correct_options, exec_ctx, target, output_type, num_distractors
+                correct_options,
+                exec_ctx,
+                question_spec.target,
+                question_spec.output_type,
+                num_distractors,
             )
         )
 
@@ -213,7 +223,9 @@ class QueryVariationStrategy(DistractorStrategy):
         modified_target_path: list[TargetElement] | None = None,
     ) -> list[Any]:
         # Use modified values if provided, otherwise use original
-        final_output_type = modified_output_type if modified_output_type else output_type
+        final_output_type = (
+            modified_output_type if modified_output_type else output_type
+        )
         final_target = modified_target_path if modified_target_path else target
 
         query_generator = QueryGenerator(exec_ctx)
@@ -223,7 +235,9 @@ class QueryVariationStrategy(DistractorStrategy):
 
     def _match_answer_format(self, ref_answer: Any, distractor: Any) -> Any:
         """Ensure distractors match the format of the correct answer."""
-        if isinstance(ref_answer, type(distractor)) and not isinstance(ref_answer, list):
+        if isinstance(ref_answer, type(distractor)) and not isinstance(
+            ref_answer, list
+        ):
             return distractor
 
         if isinstance(ref_answer, list) and not isinstance(distractor, list):

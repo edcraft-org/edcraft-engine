@@ -2,7 +2,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-# Type aliases for clarity
 TargetElementType = Literal["function", "loop", "branch", "variable"]
 OutputType = Literal["list", "count", "first", "last"]
 QuestionType = Literal["mcq", "mrq", "short_answer"]
@@ -17,9 +16,9 @@ class TargetElement(BaseModel):
     type: TargetElementType = Field(
         ..., description="Type of the target element (function, loop, branch, variable)"
     )
-    id: int | list[int] = Field(
+    id: list[int] = Field(
         ...,
-        description="Index of the element in the respective array "
+        description="Indices of the element in the respective array "
         "(functions/loops/branches)",
     )
     name: str | None = Field(
@@ -44,12 +43,48 @@ class TargetElement(BaseModel):
             raise ValueError("Function modifiers are only valid for functions.")
 
 
-class AlgorithmInput(BaseModel):
-    """Execution parameters for running the algorithm."""
+class Question(BaseModel):
+    """Represents a generated question."""
 
-    entry_function: str = Field(
-        ..., description="Name of the entry point function to execute"
+    text: str = Field(..., description="The text of the question")
+    answer: Any = Field(..., description="The answer to the question")
+    options: list[Any] | None = Field(
+        None, description="List of options for MCQ or MRQ types"
     )
+    correct_indices: list[int] | None = Field(
+        None, description="List of indices of correct options for MCQ or MRQ types"
+    )
+    question_type: QuestionType = Field(
+        ..., description="Type of the question (mcq, mrq, short_answer, etc.)"
+    )
+
+
+class QuestionSpec(BaseModel):
+    """Specification for the question to be generated."""
+
+    target: list[TargetElement] = Field(
+        ..., description="Target elements in the execution to query"
+    )
+    output_type: OutputType = Field(
+        ..., description="Type of output to generate (list, count, first, last)"
+    )
+    question_type: QuestionType = Field(
+        ..., description="Type of question to generate (mcq, mrq, short_answer)"
+    )
+
+
+class ExecutionSpec(BaseModel):
+    """Specification for code execution."""
+
+    entry_function: str = Field(..., description="Name of the entry function to execute")
     input_data: dict[str, Any] = Field(
-        ..., description="Input parameters for the algorithm as key-value pairs"
+        ..., description="Input data to pass to the entry function"
+    )
+
+
+class GenerationOptions(BaseModel):
+    """Options for question generation."""
+
+    num_distractors: int = Field(
+        default=4, description="Number of distractors to generate for MCQ/MRQ questions"
     )
