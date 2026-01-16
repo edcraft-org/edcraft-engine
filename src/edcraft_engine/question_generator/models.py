@@ -77,8 +77,8 @@ class ExecutionSpec(BaseModel):
     """Specification for code execution."""
 
     entry_function: str = Field(..., description="Name of the entry function to execute")
-    input_data: dict[str, Any] = Field(
-        ..., description="Input data to pass to the entry function"
+    input_data: dict[str, Any] | None = Field(
+        None, description="Input data to pass to the entry function (optional for template generation)"
     )
 
 

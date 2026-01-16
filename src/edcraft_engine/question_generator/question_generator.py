@@ -73,6 +73,44 @@ class QuestionGenerator:
             question_type=question_spec.question_type,
         )
 
+    def generate_template_preview(
+        self,
+        question_spec: QuestionSpec,
+        generation_options: GenerationOptions,
+    ) -> Question:
+        """Generate a template preview without executing code.
+
+        Args:
+            question_spec: Specification of what to ask
+            generation_options: Generation parameters
+
+        Returns:
+            Question object with template text and placeholders
+        """
+        # Generate template question text (without input data)
+        text = self.text_generator.generate_question(
+            question_spec,
+            input_data=None,
+        )
+
+        # Provide placeholder values
+        answer = "<placeholder_answer>"
+        options = None
+        correct_indices = None
+
+        if question_spec.question_type in ("mcq", "mrq"):
+            num_options = generation_options.num_distractors + 1
+            options = [f"<option_{i+1}>" for i in range(num_options)]
+            correct_indices = [0]
+
+        return Question(
+            text=text,
+            answer=answer,
+            options=options,
+            correct_indices=correct_indices,
+            question_type=question_spec.question_type,
+        )
+
     def _inject_input_data(
         self, code: str, execution_spec: ExecutionSpec
     ) -> str:

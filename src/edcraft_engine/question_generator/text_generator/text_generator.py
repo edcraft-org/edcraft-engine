@@ -11,7 +11,7 @@ class TextGenerator:
     def generate_question(
         self,
         question_spec: QuestionSpec,
-        input_data: dict[str, Any],
+        input_data: dict[str, Any] | None = None,
     ) -> str:
         """Generates a question text based on the provided request."""
 
@@ -21,10 +21,14 @@ class TextGenerator:
             question_spec.target[-1], question_spec.output_type
         )
         question_type_phrase = self._build_question_type(question_spec.question_type)
-        input_data_phrase = self._build_input_data_phrase(input_data)
 
         # Compose the final question
-        question = f"{context}, {target_phrase}? {question_type_phrase}\nGiven input: {input_data_phrase}"
+        if input_data is None:
+            question = f"{context}, {target_phrase}? {question_type_phrase}"
+        else:
+            input_data_phrase = self._build_input_data_phrase(input_data)
+            question = f"{context}, {target_phrase}? {question_type_phrase}\nGiven input: {input_data_phrase}"
+
         return question
 
     def _build_context(self, targets: list[TargetElement]) -> str:
