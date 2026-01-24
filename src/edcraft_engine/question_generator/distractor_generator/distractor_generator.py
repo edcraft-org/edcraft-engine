@@ -1,5 +1,7 @@
 from typing import Any
 
+from step_tracer import ExecutionContext
+
 from edcraft_engine.question_generator.distractor_generator.distractor_strategies.base_strategy import (
     DistractorStrategy,
 )
@@ -11,7 +13,6 @@ from edcraft_engine.question_generator.distractor_generator.distractor_strategie
 #     QueryVariationStrategy,
 # )
 from edcraft_engine.question_generator.models import QuestionSpec
-from edcraft_engine.step_tracer.models import ExecutionContext
 
 
 class DistractorGenerator:

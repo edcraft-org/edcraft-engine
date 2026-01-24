@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+from step_tracer import ExecutionContext
+
 from edcraft_engine.question_generator.models import QuestionSpec
-from edcraft_engine.step_tracer.models import ExecutionContext
 
 
 class DistractorStrategy(ABC):

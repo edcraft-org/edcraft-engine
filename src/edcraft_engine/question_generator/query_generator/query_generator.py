@@ -1,8 +1,9 @@
 from typing import Any
 
-from edcraft_engine.query_engine.query_engine import Query, QueryEngine
+from query_engine import Query, QueryEngine
+from step_tracer import ExecutionContext
+
 from edcraft_engine.question_generator.models import OutputType, TargetElement
-from edcraft_engine.step_tracer.models import ExecutionContext
 
 
 class QueryGenerator:

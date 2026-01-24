@@ -20,6 +20,8 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.12.3",
+    "query-engine",
+    "step-tracer",
 ]
 
 [dependency-groups]
@@ -49,3 +51,7 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "I", "N", "UP", "B", "A", "S", "T20", "Q"]
 ignore = ["S101", "S102", "E501"]
+
+[tool.uv.sources]
+step-tracer = { git = "https://github.com/edcraft-org/step-tracer.git" }
+query-engine = { git = "https://github.com/edcraft-org/query-engine.git" }

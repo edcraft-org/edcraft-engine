@@ -1,6 +1,8 @@
 import random
 from typing import Any
 
+from step_tracer import StepTracer
+
 from edcraft_engine.question_generator.distractor_generator.distractor_generator import (
     DistractorGenerator,
 )
@@ -16,7 +18,6 @@ from edcraft_engine.question_generator.query_generator.query_generator import (
 from edcraft_engine.question_generator.text_generator.text_generator import (
     TextGenerator,
 )
-from edcraft_engine.step_tracer.step_tracer import StepTracer
 
 
 class QuestionGenerator:
