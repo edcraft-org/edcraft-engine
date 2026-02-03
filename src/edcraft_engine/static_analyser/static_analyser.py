@@ -68,6 +68,7 @@ class StaticAnalyser(ast.NodeVisitor):
         lineno: int,
         is_definition: bool,
         access_chain: list[str] | None = None,
+        parameters: list[str] | None = None,
     ) -> Function:
         func = Function(
             id=len(self.functions),
@@ -77,7 +78,7 @@ class StaticAnalyser(ast.NodeVisitor):
             parent=self.current_element,
             children=[],
             name=".".join(access_chain) if access_chain else func_name,
-            parameters=[],
+            parameters=parameters or [],
             is_definition=is_definition,
         )
         self.functions.append(func)
@@ -125,7 +126,10 @@ class StaticAnalyser(ast.NodeVisitor):
 
         # Record function information
         func = self._record_function(
-            func_name=node.name, lineno=node.lineno, is_definition=True
+            func_name=node.name,
+            lineno=node.lineno,
+            is_definition=True,
+            parameters=parameters,
         )
         self._enter_code_block(func)
 
