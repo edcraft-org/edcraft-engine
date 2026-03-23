@@ -76,22 +76,34 @@ class QuestionGenerator:
 
     def generate_template_preview(
         self,
+        code: str,
         question_spec: QuestionSpec,
         generation_options: GenerationOptions,
+        execution_spec: ExecutionSpec,
     ) -> Question:
         """Generate a template preview without executing code.
 
         Args:
             question_spec: Specification of what to ask
             generation_options: Generation parameters
+            execution_spec: Specifications for code execution
 
         Returns:
             Question object with template text and placeholders
         """
+        # Generate question if input data provided
+        if execution_spec.input_data is not None:
+            return self.generate_question(
+                code=code,
+                question_spec=question_spec,
+                execution_spec=execution_spec,
+                generation_options=generation_options,
+            )
+
         # Generate template question text (without input data)
         text = self.text_generator.generate_question(
             question_spec,
-            input_data=None,
+            input_data=execution_spec.input_data,
         )
 
         # Provide placeholder values
