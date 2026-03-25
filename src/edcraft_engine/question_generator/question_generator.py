@@ -35,7 +35,9 @@ class QuestionGenerator:
     ) -> Question:
         """Generates a question based on the provided parameters."""
         # Generate question text
-        text = self.text_generator.generate_question(question_spec, execution_spec.input_data)
+        text = self.text_generator.generate_question(
+            question_spec, execution_spec.input_data
+        )
 
         # Generate execution context
         code_with_input = self._inject_input_data(code, execution_spec)
@@ -43,8 +45,17 @@ class QuestionGenerator:
         exec_ctx = self.step_tracer.execute_transformed_code(transformed_code)
 
         # Generate Answer
-        query = QueryGenerator(exec_ctx).generate_query(question_spec.target, question_spec.output_type)
+        query_gen = QueryGenerator(exec_ctx)
+        query = query_gen.generate_query(
+            question_spec.target, question_spec.output_type
+        )
         query_results = query.execute()
+        if (
+            question_spec.output_type in ("count", "first", "last")
+            and query_gen.join_idx == 0
+            and query_results
+        ):
+            query_results = query_results[0]
         answer = f"{query_results}"
 
         # Generate Distractors
@@ -53,7 +64,9 @@ class QuestionGenerator:
 
         if question_spec.question_type in ("mcq", "mrq"):
             correct_options = (
-                query_results if question_spec.question_type == "mrq" else [query_results]
+                query_results
+                if question_spec.question_type == "mrq"
+                else [query_results]
             )
 
             distractors = self.distractor_generator.generate_distractors(
@@ -124,11 +137,10 @@ class QuestionGenerator:
             question_type=question_spec.question_type,
         )
 
-    def _inject_input_data(
-        self, code: str, execution_spec: ExecutionSpec
-    ) -> str:
+    def _inject_input_data(self, code: str, execution_spec: ExecutionSpec) -> str:
         """Injects input data into the code for tracing."""
         return f"{code}\n\n# Execute the function\n{execution_spec.entry_function}(**{execution_spec.input_data})"
+
     def _shuffle_options(
         self, options: list[Any], num_correct: int
     ) -> tuple[list[Any], list[int]]:

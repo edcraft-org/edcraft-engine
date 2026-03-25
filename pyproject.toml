@@ -38,6 +38,10 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 
+[[tool.mypy.overrides]]
+module = ["query_engine", "step_tracer"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -53,5 +57,11 @@ select = ["E", "F", "W", "C90", "I", "N", "UP", "B", "A", "S", "T20", "Q"]
 ignore = ["S101", "S102", "E501"]
 
 [tool.uv.sources]
-step-tracer = { git = "https://github.com/edcraft-org/step-tracer.git" }
-query-engine = { git = "https://github.com/edcraft-org/query-engine.git" }
+step-tracer = { git = "https://github.com/edcraft-org/step-tracer.git", branch = "fixes" }
+query-engine = { git = "https://github.com/edcraft-org/query-engine.git", branch = "fixes" }
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101", # Allow asserts in tests
+    "W293", # Allow blank lines in test case codes
+]

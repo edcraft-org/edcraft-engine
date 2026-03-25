@@ -19,94 +19,27 @@ class OutputModificationStrategy(DistractorStrategy):
         question_spec: QuestionSpec,
         num_distractors: int,
     ) -> list[Any]:
-        if question_spec.question_type == "mcq":
-            return self._generate_mcq_distractors(correct_options[0], num_distractors)
-        elif question_spec.question_type == "mrq":
-            return self._generate_mrq_distractors(correct_options, num_distractors)
-        else:
-            return []
-
-    def _generate_mcq_distractors(
-        self, correct_option: Any, num_needed: int
-    ) -> list[Any]:
         distractors: list[Any] = []
-        seen: set[str] = set()
-        seen.add(str(correct_option))
-
-        for idx, item in enumerate(correct_option):
-            if len(distractors) >= num_needed:
-                break
-
-            if isinstance(item, int):
-                variations = self._generate_numeric_variations(
-                    item, num_needed - len(distractors)
-                )
-
-                for var in variations:
-                    new_option = correct_option.copy()
-                    new_option[idx] = var
-                    self._add_distractor(distractors, seen, new_option)
-
-            elif isinstance(item, list):
-                item = cast(list[Any], item)
-                variations = self._generate_list_variations(
-                    item, num_needed - len(distractors)
-                )
-
-                for var in variations:
-                    new_option = correct_option.copy()
-                    new_option[idx] = var
-                    self._add_distractor(distractors, seen, new_option)
-
-            elif isinstance(item, dict):
-                item = cast(dict[Any, Any], item)
-                variations = self._generate_dict_variations(
-                    item, num_needed - len(distractors)
-                )
-
-                for var in variations:
-                    new_option = correct_option.copy()
-                    new_option[idx] = var
-                    self._add_distractor(distractors, seen, new_option)
-
-        return distractors[:num_needed]
-
-    def _generate_mrq_distractors(
-        self,
-        correct_options: list[Any],
-        num_needed: int,
-    ) -> list[Any]:
-        distractors: list[Any] = []
-        seen: set[str] = set()
-        for option in correct_options:
-            seen.add(str(option))
-
+        seen: set[str] = {str(opt) for opt in correct_options}
         for correct_option in correct_options:
-            if len(distractors) >= num_needed:
+            if len(distractors) >= num_distractors:
                 break
+            for var in self._generate_variations(
+                correct_option, num_distractors - len(distractors)
+            ):
+                self._add_distractor(distractors, seen, var)
+        return distractors[:num_distractors]
 
-            if isinstance(correct_option, list):
-                correct_option = cast(list[Any], correct_option)
-                variations = self._generate_list_variations(
-                    correct_option, num_needed - len(distractors)
-                )
-                for var in variations:
-                    self._add_distractor(distractors, seen, var)
-            elif isinstance(correct_option, int):
-                variations = self._generate_numeric_variations(
-                    correct_option, num_needed - len(distractors)
-                )
-                for var in variations:
-                    self._add_distractor(distractors, seen, var)
-            elif isinstance(correct_option, dict):
-                correct_option = cast(dict[Any, Any], correct_option)
-                variations = self._generate_dict_variations(
-                    correct_option, num_needed - len(distractors)
-                )
-                for var in variations:
-                    self._add_distractor(distractors, seen, var)
-
-        return distractors[:num_needed]
+    def _generate_variations(self, item: Any, num_needed: int) -> list[Any]:
+        if isinstance(item, int):
+            return self._generate_numeric_variations(item, num_needed)
+        elif isinstance(item, list):
+            return self._generate_list_variations(cast(list[Any], item), num_needed)
+        elif isinstance(item, dict):
+            return self._generate_dict_variations(
+                cast(dict[Any, Any], item), num_needed
+            )
+        return []
 
     def _generate_list_variations(
         self,
@@ -129,8 +62,7 @@ class OutputModificationStrategy(DistractorStrategy):
         variations: list[Any] = (
             []
         )  # in order of closest to farthest from correct answer
-        seen: set[int] = set()
-        seen.add(correct_option)
+        seen: set[int] = {correct_option}
 
         def add_variation(val: int) -> None:
             if val not in seen:
@@ -163,9 +95,8 @@ class OutputModificationStrategy(DistractorStrategy):
                 ):
                     variations.append({**correct_option, key: var})
             elif isinstance(value, list):
-                value = cast(list[Any], value)
                 for var in self._generate_list_variations(
-                    value, num_needed - len(variations)
+                    cast(list[Any], value), num_needed - len(variations)
                 ):
                     variations.append({**correct_option, key: var})
 
