@@ -109,7 +109,8 @@ class TextGenerator:
             quantifier = "each"
 
         if target.modifier == "arguments":
-            return f"what are the arguments passed to {quantifier} function `{target.name}()` call"
+            keys_str = f' ({", ".join(target.argument_keys)})' if target.argument_keys else ""
+            return f"what are the arguments{keys_str} passed to {quantifier} function `{target.name}()` call"
         elif target.modifier == "return_value":
             return f"what is the return value of {quantifier} function `{target.name}()` call"
         else:

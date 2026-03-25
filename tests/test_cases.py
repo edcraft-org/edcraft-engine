@@ -142,12 +142,13 @@ def swap(arr, a, b):
                     "name": "sum_n",
                     "line_number": 1,
                     "modifier": "arguments",
+                    "argument_keys": ["sum"],
                 }
             ],
             "output_type": "list",
             "question_type": "mcq",
         },
         "generation_options": {"num_distractors": 3},
-        "answer": "[{'n': 3, 'sum': 0}, {'n': 2, 'sum': 3}, {'n': 1, 'sum': 5}, {'n': 0, 'sum': 6}]",
+        "answer": "[0, 3, 5, 6]",
     },
 ]

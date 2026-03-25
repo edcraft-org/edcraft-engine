@@ -54,14 +54,10 @@ class QueryGenerator:
                     for item in self.exec_ctx_items
                 )
                 field = "func_def_line_num" if is_def_line else "line_number"
-                query = query.where(
-                    field=field, op="==", value=target.line_number
-                )
+                query = query.where(field=field, op="==", value=target.line_number)
 
             if target.modifier is not None:
-                if target.modifier in ("arguments", "return_value"):
-                    query = query.select(target.modifier)
-                elif target.modifier in ("branch_true", "branch_false"):
+                if target.modifier in ("branch_true", "branch_false"):
                     condition_value = target.modifier == "branch_true"
                     query = query.where(
                         field="condition_result",
@@ -145,9 +141,7 @@ class QueryGenerator:
 
     def _apply_group_by(self, query: Query) -> Query:
         if self.join_idx > 0:
-            group_fields = [
-                f"{alias}.execution_id" for alias in range(self.join_idx)
-            ]
+            group_fields = [f"{alias}.execution_id" for alias in range(self.join_idx)]
             query = query.group_by(*group_fields)
         return query
 
@@ -238,9 +232,9 @@ class QueryGenerator:
             else:
                 is_variable_target = last is not None and last.type == "variable"
                 key = self._make_key(is_variable_target)
-                query = query.agg(
-                    first_item=lambda items: min(items, key=key)
-                ).select("first_item")
+                query = query.agg(first_item=lambda items: min(items, key=key)).select(
+                    "first_item"
+                )
 
         elif output_type == "last":
             last = target[-1] if target else None
@@ -253,15 +247,36 @@ class QueryGenerator:
 
         return query
 
+    def _apply_argument_keys(self, query: Query, keys: list[str]) -> Query:
+        """Filters an arguments dict down to specific keys."""
+        if len(keys) == 1:
+            k = keys[0]
+            return query.map(
+                lambda args: args.get(k) if isinstance(args, dict) else args
+            )
+        return query.map(
+            lambda args: (
+                {k: args[k] for k in keys if k in args}
+                if isinstance(args, dict)
+                else args
+            )
+        )
+
     def _apply_modifier(self, query: Query, target: list[TargetElement]) -> Query:
-        """Applies the last target's modifier as a field selection (for chained targets)."""
-        if self.join_idx == 0:
+        """Applies the last target's modifier as a field selection after aggregation."""
+        last = target[-1] if target else None
+        if last is None or last.modifier not in ("arguments", "return_value"):
             return query
 
-        last = target[-1] if target else None
-        if last is not None and last.modifier in ("arguments", "return_value"):
+        if self.join_idx == 0:
+            query = query.select(last.modifier)
+            if last.modifier == "arguments" and last.argument_keys:
+                query = self._apply_argument_keys(query, last.argument_keys)
+        else:
             prefix = f"{self.join_idx}."
             query = query.select(f"{prefix}{last.modifier}")
+            if last.modifier == "arguments" and last.argument_keys:
+                query = self._apply_argument_keys(query, last.argument_keys)
         return query
 
     def _clean_output(
@@ -278,11 +293,12 @@ class QueryGenerator:
             else:
                 query = query.select(f"{prefix}name", f"{prefix}value")
         elif last is not None and last.modifier == "arguments":
-            query = query.map(
-                lambda args: (
-                    next(iter(args.values()))
-                    if isinstance(args, dict) and len(args) == 1
-                    else args
+            if not last.argument_keys:
+                query = query.map(
+                    lambda args: (
+                        next(iter(args.values()))
+                        if isinstance(args, dict) and len(args) == 1
+                        else args
+                    )
                 )
-            )
         return query

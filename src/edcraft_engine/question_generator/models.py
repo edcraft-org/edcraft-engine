@@ -28,6 +28,11 @@ class TargetElement(BaseModel):
         None, description="Line number where the element appears"
     )
     modifier: TargetModifier | None = Field(None, description="Modifier for target")
+    argument_keys: list[str] | None = Field(
+        None,
+        description="Specific argument keys to select (only valid when modifier='arguments'). "
+        "Single key returns a scalar; multiple keys return a sub-dict.",
+    )
 
     def __post_init__(self) -> None:
         if not self.modifier:
