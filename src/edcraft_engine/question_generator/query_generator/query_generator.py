@@ -1,7 +1,9 @@
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 
 from query_engine import Query, QueryEngine
+from query_engine.pipeline_steps import JoinResult
 from step_tracer import ExecutionContext
 
 from edcraft_engine.question_generator.models import OutputType, TargetElement
@@ -46,7 +48,8 @@ class QueryGenerator:
                         field="func_full_name", op="==", value=target.name
                     )
                 else:
-                    query = query.where(field="name", op="==", value=target.name)
+                    names = [n.strip() for n in target.name.split(",")]
+                    query = query.where(field="name", op="in", value=names)
 
             if target.line_number is not None:
                 is_def_line = target.type == "function" and any(
@@ -80,6 +83,11 @@ class QueryGenerator:
             return query
 
         join_idx = self.join_idx
+        target_names = (
+            [n.strip() for n in target.name.split(",")]
+            if target.name is not None
+            else None
+        )
 
         def join_condition(left: Any, right: Any) -> bool:
             left_exec = left.get(f"{join_idx}") if join_idx > 0 else left
@@ -113,7 +121,7 @@ class QueryGenerator:
 
             return (
                 right.stmt_type == target.type
-                and (target.name is None or right_name == target.name)
+                and (target_names is None or right_name in target_names)
                 and (
                     target.line_number is None
                     or right.line_number == target.line_number
@@ -187,7 +195,45 @@ class QueryGenerator:
             ).select("count")
 
         elif output_type == "list":
-            pass
+            last = target[-1] if target else None
+            is_variable_join = (
+                self.join_idx > 0
+                and last is not None
+                and last.type == "variable"
+            )
+            if is_variable_join:
+                join_idx = self.join_idx
+                query = self._apply_group_by(query)
+
+                def pick_first_list(
+                    candidates: list[Any], parent: Any, var_key: Callable
+                ) -> Any:
+                    parent_start = parent.execution_id if parent is not None else 0
+                    outside = [
+                        x for x in candidates
+                        if x.get(f"{join_idx}").execution_id < parent_start
+                    ]
+                    if outside:
+                        return max(outside, key=var_key)
+                    return min(candidates, key=var_key) if candidates else None
+
+                query = query.agg(
+                    list_item=self._make_variable_aggregator(join_idx, last, pick_first_list)
+                ).select("list_item")
+            elif (
+                self.join_idx == 0
+                and last is not None
+                and last.type == "variable"
+                and last.name is not None
+                and "," in last.name
+            ):
+                names = [n.strip() for n in last.name.split(",")]
+                query = query.agg(
+                    grouped=lambda items: {
+                        name: [x.value for x in items if x.name == name]
+                        for name in names
+                    }
+                ).select("grouped")
 
         elif output_type == "first":
             last = target[-1] if target else None
@@ -198,37 +244,25 @@ class QueryGenerator:
 
             if is_variable_join:
                 join_idx = self.join_idx
-                parent_idx = join_idx - 1
 
-                def first_variable(items: list[Any]) -> Any:
-                    # execution_id of the parent context (e.g. loop iteration) marks
-                    # the boundary between "assigned before" and "assigned inside".
-                    parent = items[0].get(f"{parent_idx}") if items else None
+                def pick_first(
+                    candidates: list[Any], parent: Any, var_key: Callable
+                ) -> Any:
                     parent_start = parent.execution_id if parent is not None else 0
-
-                    def var_key(x: Any) -> Any:
-                        item = x.get(f"{join_idx}")
-                        return getattr(item, "var_id", 0)
-
-                    # Prefer the most recent assignment made before the current context.
                     outside = [
                         x
-                        for x in items
-                        if x.get(f"{join_idx}") is not None
-                        and x.get(f"{join_idx}").execution_id < parent_start
+                        for x in candidates
+                        if x.get(f"{join_idx}").execution_id < parent_start
                     ]
                     if outside:
                         return max(outside, key=var_key)
+                    return min(candidates, key=var_key) if candidates else None
 
-                    # No prior assignment — fall back to the earliest assignment inside.
-                    inside = [x for x in items if x.get(f"{join_idx}") is not None]
-                    return (
-                        min(inside, key=var_key)
-                        if inside
-                        else (items[0] if items else None)
+                query = query.agg(
+                    first_item=self._make_variable_aggregator(
+                        join_idx, last, pick_first
                     )
-
-                query = query.agg(first_item=first_variable).select("first_item")
+                ).select("first_item")
             else:
                 is_variable_target = last is not None and last.type == "variable"
                 key = self._make_key(is_variable_target)
@@ -238,14 +272,91 @@ class QueryGenerator:
 
         elif output_type == "last":
             last = target[-1] if target else None
-            is_variable_target = last is not None and last.type == "variable"
-            query = self._apply_group_by(query)
-            key = self._make_key(is_variable_target)
-            query = query.agg(last_item=lambda items: max(items, key=key)).select(
-                "last_item"
+            is_variable_join = (
+                self.join_idx > 0 and last is not None and last.type == "variable"
             )
+            query = self._apply_group_by(query)
+
+            if is_variable_join:
+                join_idx = self.join_idx
+
+                def pick_last(
+                    candidates: list[Any], parent: Any, var_key: Callable
+                ) -> Any:
+                    parent_end = (
+                        parent.end_execution_id if parent is not None else float("inf")
+                    )
+                    inside = [
+                        x
+                        for x in candidates
+                        if x.get(f"{join_idx}").execution_id <= parent_end
+                    ]
+                    if inside:
+                        return max(inside, key=var_key)
+                    return max(candidates, key=var_key) if candidates else None
+
+                query = query.agg(
+                    last_item=self._make_variable_aggregator(join_idx, last, pick_last)
+                ).select("last_item")
+            else:
+                is_variable_target = last is not None and last.type == "variable"
+                key = self._make_key(is_variable_target)
+                query = query.agg(last_item=lambda items: max(items, key=key)).select(
+                    "last_item"
+                )
 
         return query
+
+    def _make_variable_aggregator(
+        self,
+        join_idx: int,
+        last: TargetElement | None,
+        pick_for_name: Callable[[list[Any], Any, Callable], Any],
+    ) -> Callable[[list[Any]], Any]:
+
+        parent_idx = join_idx - 1
+        var_names = (
+            [n.strip() for n in last.name.split(",")]
+            if last is not None and last.name is not None and "," in last.name
+            else None
+        )
+
+        def aggregator(items: list[Any]) -> Any:
+            parent = items[0].get(f"{parent_idx}") if items else None
+
+            def var_key(x: Any) -> Any:
+                return getattr(x.get(f"{join_idx}"), "var_id", 0)
+
+            def pick(name: str | None) -> Any:
+                candidates = (
+                    [
+                        x
+                        for x in items
+                        if x.get(f"{join_idx}") is not None
+                        and x.get(f"{join_idx}").name == name
+                    ]
+                    if name is not None
+                    else [x for x in items if x.get(f"{join_idx}") is not None]
+                )
+                return pick_for_name(candidates, parent, var_key)
+
+            if var_names is not None:
+                values = tuple(
+                    r.get(f"{join_idx}").value if r is not None else None
+                    for r in (pick(name) for name in var_names)
+                )
+                base = items[0] if items else JoinResult()
+                result = JoinResult()
+                for alias, val in base.alias_to_items.items():
+                    if alias != f"{join_idx}":
+                        result.add_alias(alias, val)
+                result.add_alias(f"{join_idx}", SimpleNamespace(value=values))
+                return result
+
+            best = pick(None)
+            return best if best is not None else (items[0] if items else None)
+
+        return aggregator
 
     def _apply_argument_keys(self, query: Query, keys: list[str]) -> Query:
         """Filters an arguments dict down to specific keys."""
@@ -289,7 +400,8 @@ class QueryGenerator:
         last = target[-1] if target else None
         if last is not None and last.type == "variable":
             if last.name is not None:
-                query = query.select(f"{prefix}value")
+                if not (output_type == "list" and self.join_idx == 0 and "," in last.name):
+                    query = query.select(f"{prefix}value")
             else:
                 query = query.select(f"{prefix}name", f"{prefix}value")
         elif last is not None and last.modifier == "arguments":

@@ -151,4 +151,42 @@ def swap(arr, a, b):
         "generation_options": {"num_distractors": 3},
         "answer": "[0, 3, 5, 6]",
     },
+    {
+        "code": "def binary_search(arr, target):\n    left = 0\n    right = len(arr) - 1\n    \n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1",
+        "execution_spec": {
+            "entry_function": "binary_search",
+            "input_data": {"arr": [1, 3, 5, 10, 11, 15, 18, 20], "target": 18},
+        },
+        "question_spec": {
+            "target": [
+                {
+                    "type": "loop",
+                    "id": [0],
+                    "line_number": 5,
+                    "modifier": "loop_iterations",
+                },
+                {"type": "variable", "id": [0], "name": "left,right"},
+            ],
+            "output_type": "first",
+            "question_type": "mcq",
+        },
+        "generation_options": {"num_distractors": 3},
+        "answer": "[(0, 7), (4, 7), (6, 7)]",
+    },
+    {
+        "code": "def binary_search(arr, target):\n    left = 0\n    right = len(arr) - 1\n    \n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1",
+        "execution_spec": {
+            "entry_function": "binary_search",
+            "input_data": {"arr": [1, 3, 5, 10, 11, 15, 18, 20], "target": 18},
+        },
+        "question_spec": {
+            "target": [
+                {"type": "variable", "id": [0], "name": "left,right"},
+            ],
+            "output_type": "list",
+            "question_type": "mcq",
+        },
+        "generation_options": {"num_distractors": 3},
+        "answer": "[{'left': [0, 4, 6], 'right': [7]}]",
+    },
 ]
