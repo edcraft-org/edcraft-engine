@@ -231,8 +231,7 @@ class QueryVariationStrategy(DistractorStrategy):
 
         query_generator = QueryGenerator(exec_ctx)
         query = query_generator.generate_query(final_target, final_output_type)
-        result = query.execute()
-        return result
+        return list(query.execute())
 
     def _match_answer_format(self, ref_answer: Any, distractor: Any) -> Any:
         """Ensure distractors match the format of the correct answer."""

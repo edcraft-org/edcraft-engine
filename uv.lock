@@ -336,7 +336,7 @@ wheels = [
 [[package]]
 name = "query-engine"
 version = "0.1.0"
-source = { git = "https://github.com/edcraft-org/query-engine.git?branch=fixes#fed4398509da147a0dd470b20804ccf61a88b497" }
+source = { git = "https://github.com/edcraft-org/query-engine.git?branch=fixes#45295a18620006324908861c4a6ae7aa30dd2bd1" }
 dependencies = [
     { name = "step-tracer" },
 ]
@@ -369,7 +369,7 @@ wheels = [
 [[package]]
 name = "step-tracer"
 version = "0.1.0"
-source = { git = "https://github.com/edcraft-org/step-tracer.git?branch=fixes#747ba0189305a1b16eaa7a71dd877b618b08bce1" }
+source = { git = "https://github.com/edcraft-org/step-tracer.git?branch=fixes#09b28182c55b24c403a260f06b90631e7fa795ce" }
 
 [[package]]
 name = "typing-extensions"

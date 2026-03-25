@@ -5,8 +5,33 @@ from typing import Any
 from query_engine import Query, QueryEngine
 from query_engine.pipeline_steps import JoinResult
 from step_tracer import ExecutionContext
+from step_tracer.models import (
+    BranchExecution,
+    FunctionCall,
+    LoopIteration,
+    StatementExecution,
+    VariableSnapshot,
+)
 
 from edcraft_engine.question_generator.models import OutputType, TargetElement
+
+_Item = StatementExecution | VariableSnapshot
+
+
+class _TargetType:
+    BRANCH = "branch"
+    FUNCTION = "function"
+    VARIABLE = "variable"
+    LOOP = "loop"
+    LOOP_ITERATION = "loop_iteration"
+
+
+class _Modifier:
+    BRANCH_TRUE = "branch_true"
+    BRANCH_FALSE = "branch_false"
+    LOOP_ITERATIONS = "loop_iterations"
+    ARGUMENTS = "arguments"
+    RETURN_VALUE = "return_value"
 
 
 class QueryGenerator:
@@ -19,69 +44,79 @@ class QueryGenerator:
         self, target: list[TargetElement], output_type: OutputType
     ) -> Query:
         """Generates a query based on the provided question request."""
-
         query = self.query_engine.create_query()
 
-        # Select target
         for target_element in target:
             query = self._get_target(query, target_element)
 
-        # Apply output type
         query = self._apply_output_type(query, output_type, target)
-
         query = self._apply_modifier(query, target)
         query = self._clean_output(query, target, output_type)
 
         return query
 
+    @staticmethod
+    def _last_target(target: list[TargetElement]) -> TargetElement | None:
+        return target[-1] if target else None
+
+    def _is_variable_join(self, last: TargetElement | None) -> bool:
+        return (
+            self.join_idx > 0 and last is not None and last.type == _TargetType.VARIABLE
+        )
+
     def _get_target(self, query: Query, target: TargetElement) -> Query:
         if self.join_idx == 0:
-            query = query.where(field="stmt_type", op="==", value=target.type)
+            return self._get_target_first(query, target)
+        return self._get_target_join(query, target)
 
-            if target.name is not None:
-                if target.type == "branch":
-                    query = query.where(
-                        field="condition_str", op="==", value=target.name
-                    )
-                elif target.type == "function":
-                    query = query.where(
-                        field="func_full_name", op="==", value=target.name
-                    )
-                else:
-                    names = [n.strip() for n in target.name.split(",")]
-                    query = query.where(field="name", op="in", value=names)
+    def _get_target_first(self, query: Query, target: TargetElement) -> Query:
+        query = query.where(field="stmt_type", op="==", value=target.type)
 
-            if target.line_number is not None:
-                is_def_line = target.type == "function" and any(
-                    getattr(item, "func_def_line_num", None) == target.line_number
-                    for item in self.exec_ctx_items
+        if target.name is not None:
+            query = self._apply_name_filter(query, target)
+
+        if target.line_number is not None:
+            is_def_line = target.type == _TargetType.FUNCTION and any(
+                getattr(item, "func_def_line_num", None) == target.line_number
+                for item in self.exec_ctx_items
+            )
+            field = "func_def_line_num" if is_def_line else "line_number"
+            query = query.where(field=field, op="==", value=target.line_number)
+
+        if target.modifier is not None:
+            if target.modifier in (_Modifier.BRANCH_TRUE, _Modifier.BRANCH_FALSE):
+                condition_value = target.modifier == _Modifier.BRANCH_TRUE
+                query = query.where(
+                    field="condition_result",
+                    op="==",
+                    value=condition_value,
                 )
-                field = "func_def_line_num" if is_def_line else "line_number"
-                query = query.where(field=field, op="==", value=target.line_number)
+            elif target.modifier == _Modifier.LOOP_ITERATIONS:
+                query = query.left_join(
+                    other_items=self.exec_ctx_items,
+                    conditions=lambda left, right: (
+                        left.stmt_type == _TargetType.LOOP
+                        and right.stmt_type == _TargetType.LOOP_ITERATION
+                        and right.loop_execution_id == left.execution_id
+                    ),
+                    left_alias=f"{self.join_idx}",
+                    right_alias=f"{self.join_idx+1}",
+                )
+                self.join_idx += 1
 
-            if target.modifier is not None:
-                if target.modifier in ("branch_true", "branch_false"):
-                    condition_value = target.modifier == "branch_true"
-                    query = query.where(
-                        field="condition_result",
-                        op="==",
-                        value=condition_value,
-                    )
-                elif target.modifier == "loop_iterations":
-                    query = query.left_join(
-                        other_items=self.exec_ctx_items,
-                        conditions=lambda left, right: (
-                            left.stmt_type == "loop"
-                            and right.stmt_type == "loop_iteration"
-                            and right.loop_execution_id == left.execution_id
-                        ),
-                        left_alias=f"{self.join_idx}",
-                        right_alias=f"{self.join_idx+1}",
-                    )
-                    self.join_idx += 1
+        return query
 
+    def _apply_name_filter(self, query: Query, target: TargetElement) -> Query:
+        if target.name is None:
             return query
+        if target.type == _TargetType.BRANCH:
+            return query.where(field="condition_str", op="==", value=target.name)
+        if target.type == _TargetType.FUNCTION:
+            return query.where(field="func_full_name", op="==", value=target.name)
+        names = [n.strip() for n in target.name.split(",")]
+        return query.where(field="name", op="in", value=names)
 
+    def _get_target_join(self, query: Query, target: TargetElement) -> Query:
         join_idx = self.join_idx
         target_names = (
             [n.strip() for n in target.name.split(",")]
@@ -89,53 +124,19 @@ class QueryGenerator:
             else None
         )
 
-        def join_condition(left: Any, right: Any) -> bool:
-            left_exec = left.get(f"{join_idx}") if join_idx > 0 else left
-            if left_exec is None:
+        def join_condition(left: _Item | JoinResult, right: _Item) -> bool:
+            raw = left.get(f"{join_idx}") if isinstance(left, JoinResult) else left
+            if raw is None or not isinstance(raw, StatementExecution):
                 return False
-
-            right_name = None
-            if target.type == "function" and hasattr(right, "func_full_name"):
-                right_name = right.func_full_name
-            elif target.type == "branch" and hasattr(right, "condition_str"):
-                right_name = right.condition_str
-            elif hasattr(right, "name"):
-                right_name = right.name
-
-            scope_check = True
-            if target.type == "variable":
-                time_range_check = right.execution_id <= left_exec.end_execution_id
-                scope_check = right.scope_id == left_exec.scope_id
-            else:
-                time_range_check = (
-                    left_exec.execution_id <= right.execution_id
-                    and right.execution_id <= left_exec.end_execution_id
-                )
-
-            branch_modifier_check = True
-            if target.type == "branch" and hasattr(right, "condition_result"):
-                if target.modifier == "branch_true":
-                    branch_modifier_check = right.condition_result
-                elif target.modifier == "branch_false":
-                    branch_modifier_check = not right.condition_result
-
+            left_exec = raw
             return (
-                right.stmt_type == target.type
-                and (target_names is None or right_name in target_names)
-                and (
-                    target.line_number is None
-                    or right.line_number == target.line_number
-                )
-                and time_range_check
-                and (target.type != "variable" or scope_check)
-                and (
-                    target.modifier != "loop_iterations"
-                    or (
-                        right.stmt_type == "loop_iteration"
-                        and right.loop_execution_id == left_exec.execution_id
-                    )
-                )
-                and branch_modifier_check
+                self._check_stmt_type(right, target)
+                and self._check_name_match(right, target, target_names)
+                and self._check_line_number(right, target)
+                and self._check_time_range(left_exec, right, target)
+                and self._check_scope(left_exec, right, target)
+                and self._check_loop_iterations(left_exec, right, target)
+                and self._check_branch_modifier(right, target)
             )
 
         query = query.left_join(
@@ -147,11 +148,149 @@ class QueryGenerator:
         self.join_idx += 1
         return query
 
+    @staticmethod
+    def _check_stmt_type(right: _Item, target: TargetElement) -> bool:
+        return right.stmt_type == target.type
+
+    @staticmethod
+    def _check_name_match(
+        right: _Item, target: TargetElement, target_names: list[str] | None
+    ) -> bool:
+        if target_names is None:
+            return True
+        if target.type == _TargetType.FUNCTION and isinstance(right, FunctionCall):
+            return right.func_full_name in target_names
+        if target.type == _TargetType.BRANCH and isinstance(right, BranchExecution):
+            return right.condition_str in target_names
+        if isinstance(right, VariableSnapshot | FunctionCall):
+            return right.name in target_names
+        return False
+
+    @staticmethod
+    def _check_line_number(right: _Item, target: TargetElement) -> bool:
+        return target.line_number is None or right.line_number == target.line_number
+
+    @staticmethod
+    def _check_time_range(
+        left_exec: StatementExecution, right: _Item, target: TargetElement
+    ) -> bool:
+        left_end_exec_id = left_exec.end_execution_id
+        if left_end_exec_id is None:
+            left_end_exec_id = right.execution_id
+        if target.type == _TargetType.VARIABLE:
+            return right.execution_id <= left_end_exec_id
+        return (
+            left_exec.execution_id <= right.execution_id
+            and right.execution_id <= left_end_exec_id
+        )
+
+    @staticmethod
+    def _check_scope(
+        left_exec: StatementExecution, right: _Item, target: TargetElement
+    ) -> bool:
+        return (
+            target.type != _TargetType.VARIABLE or right.scope_id == left_exec.scope_id
+        )
+
+    @staticmethod
+    def _check_loop_iterations(
+        left_exec: StatementExecution, right: _Item, target: TargetElement
+    ) -> bool:
+        if target.modifier != _Modifier.LOOP_ITERATIONS:
+            return True
+        return (
+            isinstance(right, LoopIteration)
+            and right.loop_execution_id == left_exec.execution_id
+        )
+
+    @staticmethod
+    def _check_branch_modifier(right: _Item, target: TargetElement) -> bool:
+        if not isinstance(right, BranchExecution):
+            return True
+        if target.modifier == _Modifier.BRANCH_TRUE:
+            return right.condition_result
+        if target.modifier == _Modifier.BRANCH_FALSE:
+            return not right.condition_result
+        return True
+
     def _apply_group_by(self, query: Query) -> Query:
         if self.join_idx > 0:
             group_fields = [f"{alias}.execution_id" for alias in range(self.join_idx)]
             query = query.group_by(*group_fields)
         return query
+
+    def _apply_output_type(
+        self, query: Query, output_type: str, target: list[TargetElement] | None = None
+    ) -> Query:
+        if output_type == "count":
+            return self._apply_count_output(query)
+        if output_type == "list":
+            return self._apply_list_output(query, target or [])
+        if output_type == "first":
+            return self._apply_first_output(query, target or [])
+        if output_type == "last":
+            return self._apply_last_output(query, target or [])
+        return query
+
+    def _apply_count_output(self, query: Query) -> Query:
+        query = self._apply_group_by(query)
+        return query.agg(
+            count=lambda items: len([item for item in items if item is not None])
+        ).select("count")
+
+    def _apply_list_output(self, query: Query, target: list[TargetElement]) -> Query:
+        last = self._last_target(target)
+        if self._is_variable_join(last):
+            join_idx = self.join_idx
+            query = self._apply_group_by(query)
+            picker = self._make_picker(join_idx, before_parent=True)
+            return query.agg(
+                list_item=self._make_variable_aggregator(join_idx, last, picker)
+            ).select("list_item")
+        if (
+            self.join_idx == 0
+            and last is not None
+            and last.type == _TargetType.VARIABLE
+            and last.name is not None
+            and "," in last.name
+        ):
+            names = [n.strip() for n in last.name.split(",")]
+            return query.agg(
+                grouped=lambda items: {
+                    name: [x.value for x in items if x.name == name] for name in names
+                }
+            ).select("grouped")
+        return query
+
+    def _apply_first_output(self, query: Query, target: list[TargetElement]) -> Query:
+        last = self._last_target(target)
+        query = self._apply_group_by(query)
+        if self._is_variable_join(last):
+            join_idx = self.join_idx
+            picker = self._make_picker(join_idx, before_parent=True)
+            return query.agg(
+                first_item=self._make_variable_aggregator(join_idx, last, picker)
+            ).select("first_item")
+        is_variable_target = last is not None and last.type == _TargetType.VARIABLE
+        key = self._make_key(is_variable_target)
+        return query.agg(first_item=lambda items: min(items, key=key)).select(
+            "first_item"
+        )
+
+    def _apply_last_output(self, query: Query, target: list[TargetElement]) -> Query:
+        last = self._last_target(target)
+        query = self._apply_group_by(query)
+        if self._is_variable_join(last):
+            join_idx = self.join_idx
+            picker = self._make_picker(join_idx, before_parent=False)
+            return query.agg(
+                last_item=self._make_variable_aggregator(join_idx, last, picker)
+            ).select("last_item")
+        is_variable_target = last is not None and last.type == _TargetType.VARIABLE
+        key = self._make_key(is_variable_target)
+        return query.agg(last_item=lambda items: max(items, key=key)).select(
+            "last_item"
+        )
 
     def _make_key(
         self, is_variable_target: bool
@@ -185,127 +324,46 @@ class QueryGenerator:
 
         return key
 
-    def _apply_output_type(
-        self, query: Query, output_type: str, target: list[TargetElement] | None = None
-    ) -> Query:
-        if output_type == "count":
-            query = self._apply_group_by(query)
-            query = query.agg(
-                count=lambda items: len([item for item in items if item is not None])
-            ).select("count")
+    @staticmethod
+    def _make_picker(
+        join_idx: int, *, before_parent: bool
+    ) -> Callable[[list[Any], Any, Callable], Any]:
+        """Returns a picker that selects the best candidate relative to the parent scope.
 
-        elif output_type == "list":
-            last = target[-1] if target else None
-            is_variable_join = (
-                self.join_idx > 0
-                and last is not None
-                and last.type == "variable"
-            )
-            if is_variable_join:
-                join_idx = self.join_idx
-                query = self._apply_group_by(query)
+        before_parent=True (first/list): prefer candidates starting before the parent,
+        fall back to the earliest overall.
+        before_parent=False (last): prefer candidates inside the parent's range,
+        fall back to the latest overall.
+        """
+        if before_parent:
 
-                def pick_first_list(
-                    candidates: list[Any], parent: Any, var_key: Callable
-                ) -> Any:
-                    parent_start = parent.execution_id if parent is not None else 0
-                    outside = [
-                        x for x in candidates
-                        if x.get(f"{join_idx}").execution_id < parent_start
-                    ]
-                    if outside:
-                        return max(outside, key=var_key)
-                    return min(candidates, key=var_key) if candidates else None
+            def picker(candidates: list[Any], parent: Any, var_key: Callable) -> Any:
+                parent_start = parent.execution_id if parent is not None else 0
+                outside = [
+                    x
+                    for x in candidates
+                    if x.get(f"{join_idx}").execution_id < parent_start
+                ]
+                if outside:
+                    return max(outside, key=var_key)
+                return min(candidates, key=var_key) if candidates else None
 
-                query = query.agg(
-                    list_item=self._make_variable_aggregator(join_idx, last, pick_first_list)
-                ).select("list_item")
-            elif (
-                self.join_idx == 0
-                and last is not None
-                and last.type == "variable"
-                and last.name is not None
-                and "," in last.name
-            ):
-                names = [n.strip() for n in last.name.split(",")]
-                query = query.agg(
-                    grouped=lambda items: {
-                        name: [x.value for x in items if x.name == name]
-                        for name in names
-                    }
-                ).select("grouped")
+        else:
 
-        elif output_type == "first":
-            last = target[-1] if target else None
-            is_variable_join = (
-                self.join_idx > 0 and last is not None and last.type == "variable"
-            )
-            query = self._apply_group_by(query)
-
-            if is_variable_join:
-                join_idx = self.join_idx
-
-                def pick_first(
-                    candidates: list[Any], parent: Any, var_key: Callable
-                ) -> Any:
-                    parent_start = parent.execution_id if parent is not None else 0
-                    outside = [
-                        x
-                        for x in candidates
-                        if x.get(f"{join_idx}").execution_id < parent_start
-                    ]
-                    if outside:
-                        return max(outside, key=var_key)
-                    return min(candidates, key=var_key) if candidates else None
-
-                query = query.agg(
-                    first_item=self._make_variable_aggregator(
-                        join_idx, last, pick_first
-                    )
-                ).select("first_item")
-            else:
-                is_variable_target = last is not None and last.type == "variable"
-                key = self._make_key(is_variable_target)
-                query = query.agg(first_item=lambda items: min(items, key=key)).select(
-                    "first_item"
+            def picker(candidates: list[Any], parent: Any, var_key: Callable) -> Any:
+                parent_end = (
+                    parent.end_execution_id if parent is not None else float("inf")
                 )
+                inside = [
+                    x
+                    for x in candidates
+                    if x.get(f"{join_idx}").execution_id <= parent_end
+                ]
+                if inside:
+                    return max(inside, key=var_key)
+                return max(candidates, key=var_key) if candidates else None
 
-        elif output_type == "last":
-            last = target[-1] if target else None
-            is_variable_join = (
-                self.join_idx > 0 and last is not None and last.type == "variable"
-            )
-            query = self._apply_group_by(query)
-
-            if is_variable_join:
-                join_idx = self.join_idx
-
-                def pick_last(
-                    candidates: list[Any], parent: Any, var_key: Callable
-                ) -> Any:
-                    parent_end = (
-                        parent.end_execution_id if parent is not None else float("inf")
-                    )
-                    inside = [
-                        x
-                        for x in candidates
-                        if x.get(f"{join_idx}").execution_id <= parent_end
-                    ]
-                    if inside:
-                        return max(inside, key=var_key)
-                    return max(candidates, key=var_key) if candidates else None
-
-                query = query.agg(
-                    last_item=self._make_variable_aggregator(join_idx, last, pick_last)
-                ).select("last_item")
-            else:
-                is_variable_target = last is not None and last.type == "variable"
-                key = self._make_key(is_variable_target)
-                query = query.agg(last_item=lambda items: max(items, key=key)).select(
-                    "last_item"
-                )
-
-        return query
+        return picker
 
     def _make_variable_aggregator(
         self,
@@ -313,7 +371,6 @@ class QueryGenerator:
         last: TargetElement | None,
         pick_for_name: Callable[[list[Any], Any, Callable], Any],
     ) -> Callable[[list[Any]], Any]:
-
         parent_idx = join_idx - 1
         var_names = (
             [n.strip() for n in last.name.split(",")]
@@ -375,18 +432,21 @@ class QueryGenerator:
 
     def _apply_modifier(self, query: Query, target: list[TargetElement]) -> Query:
         """Applies the last target's modifier as a field selection after aggregation."""
-        last = target[-1] if target else None
-        if last is None or last.modifier not in ("arguments", "return_value"):
+        last = self._last_target(target)
+        if last is None or last.modifier not in (
+            _Modifier.ARGUMENTS,
+            _Modifier.RETURN_VALUE,
+        ):
             return query
 
         if self.join_idx == 0:
             query = query.select(last.modifier)
-            if last.modifier == "arguments" and last.argument_keys:
+            if last.modifier == _Modifier.ARGUMENTS and last.argument_keys:
                 query = self._apply_argument_keys(query, last.argument_keys)
         else:
             prefix = f"{self.join_idx}."
             query = query.select(f"{prefix}{last.modifier}")
-            if last.modifier == "arguments" and last.argument_keys:
+            if last.modifier == _Modifier.ARGUMENTS and last.argument_keys:
                 query = self._apply_argument_keys(query, last.argument_keys)
         return query
 
@@ -397,14 +457,16 @@ class QueryGenerator:
             return query
 
         prefix = f"{self.join_idx}." if self.join_idx > 0 else ""
-        last = target[-1] if target else None
-        if last is not None and last.type == "variable":
+        last = self._last_target(target)
+        if last is not None and last.type == _TargetType.VARIABLE:
             if last.name is not None:
-                if not (output_type == "list" and self.join_idx == 0 and "," in last.name):
+                if not (
+                    output_type == "list" and self.join_idx == 0 and "," in last.name
+                ):
                     query = query.select(f"{prefix}value")
             else:
                 query = query.select(f"{prefix}name", f"{prefix}value")
-        elif last is not None and last.modifier == "arguments":
+        elif last is not None and last.modifier == _Modifier.ARGUMENTS:
             if not last.argument_keys:
                 query = query.map(
                     lambda args: (
