@@ -54,8 +54,8 @@ select = ["E", "F", "W", "C90", "I", "N", "UP", "B", "A", "S", "T20", "Q"]
 ignore = ["S101", "S102", "E501"]
 
 [tool.uv.sources]
-step-tracer = { git = "https://github.com/edcraft-org/step-tracer.git", branch = "fixes" }
-query-engine = { git = "https://github.com/edcraft-org/query-engine.git", branch = "fixes" }
+step-tracer = { git = "https://github.com/edcraft-org/step-tracer.git" }
+query-engine = { git = "https://github.com/edcraft-org/query-engine.git" }
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [

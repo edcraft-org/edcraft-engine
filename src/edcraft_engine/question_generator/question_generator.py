@@ -66,6 +66,7 @@ class QuestionGenerator:
             correct_options = (
                 query_results
                 if question_spec.question_type == "mrq"
+                and isinstance(query_results, list)
                 else [query_results]
             )
 

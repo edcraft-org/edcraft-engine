@@ -59,8 +59,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "pydantic", specifier = ">=2.12.3" },
-    { name = "query-engine", git = "https://github.com/edcraft-org/query-engine.git?branch=fixes" },
-    { name = "step-tracer", git = "https://github.com/edcraft-org/step-tracer.git?branch=fixes" },
+    { name = "query-engine", git = "https://github.com/edcraft-org/query-engine.git" },
+    { name = "step-tracer", git = "https://github.com/edcraft-org/step-tracer.git" },
 ]
 
 [package.metadata.requires-dev]
@@ -336,7 +336,7 @@ wheels = [
 [[package]]
 name = "query-engine"
 version = "0.1.0"
-source = { git = "https://github.com/edcraft-org/query-engine.git?branch=fixes#45295a18620006324908861c4a6ae7aa30dd2bd1" }
+source = { git = "https://github.com/edcraft-org/query-engine.git#657533d7c0e5d0cdd6d1dffa881e207e25cfcad4" }
 dependencies = [
     { name = "step-tracer" },
 ]
@@ -369,7 +369,7 @@ wheels = [
 [[package]]
 name = "step-tracer"
 version = "0.1.0"
-source = { git = "https://github.com/edcraft-org/step-tracer.git?branch=fixes#09b28182c55b24c403a260f06b90631e7fa795ce" }
+source = { git = "https://github.com/edcraft-org/step-tracer.git#09b28182c55b24c403a260f06b90631e7fa795ce" }
 
 [[package]]
 name = "typing-extensions"
