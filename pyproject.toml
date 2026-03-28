@@ -53,6 +53,9 @@ src = ["src", "tests"]
 select = ["E", "F", "W", "C90", "I", "N", "UP", "B", "A", "S", "T20", "Q"]
 ignore = ["S101", "S102", "E501"]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/edcraft_engine"]
+
 [tool.uv.sources]
 step-tracer = { git = "https://github.com/edcraft-org/step-tracer.git" }
 query-engine = { git = "https://github.com/edcraft-org/query-engine.git" }
