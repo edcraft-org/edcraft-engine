@@ -189,4 +189,18 @@ def swap(arr, a, b):
         "generation_options": {"num_distractors": 3},
         "answer": "[{'left': [0, 4, 6], 'right': [7]}]",
     },
+    {
+        "code": "def example(n):\n    return n+1\n",
+        "execution_spec": {"entry_function": "example", "input_data": {"n": 3}},
+        "question_spec": {
+            "target": [
+                {"type": "function", "id": [0], "name": "example", "line_number": 1},
+                {"type": "variable", "id": [0], "name": "n"},
+            ],
+            "output_type": "first",
+            "question_type": "mcq",
+        },
+        "generation_options": {"num_distractors": 4},
+        "answer": "[3]",
+    },
 ]

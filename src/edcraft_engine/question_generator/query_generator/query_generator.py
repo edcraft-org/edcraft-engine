@@ -39,6 +39,7 @@ class QueryGenerator:
         self.query_engine = QueryEngine(exec_ctx)
         self.exec_ctx_items = exec_ctx.execution_trace + exec_ctx.variables
         self.join_idx = 0
+        self._first_target_done = False
 
     def generate_query(
         self, target: list[TargetElement], output_type: OutputType
@@ -65,7 +66,8 @@ class QueryGenerator:
         )
 
     def _get_target(self, query: Query, target: TargetElement) -> Query:
-        if self.join_idx == 0:
+        if not self._first_target_done:
+            self._first_target_done = True
             return self._get_target_first(query, target)
         return self._get_target_join(query, target)
 
@@ -188,9 +190,11 @@ class QueryGenerator:
     def _check_scope(
         left_exec: StatementExecution, right: _Item, target: TargetElement
     ) -> bool:
-        return (
-            target.type != _TargetType.VARIABLE or right.scope_id == left_exec.scope_id
-        )
+        if target.type != _TargetType.VARIABLE:
+            return True
+        if isinstance(left_exec, FunctionCall):
+            return right.scope_id == left_exec.func_scope_id
+        return right.scope_id == left_exec.scope_id
 
     @staticmethod
     def _check_loop_iterations(

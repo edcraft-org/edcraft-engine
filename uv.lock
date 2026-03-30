@@ -369,7 +369,7 @@ wheels = [
 [[package]]
 name = "step-tracer"
 version = "0.1.0"
-source = { git = "https://github.com/edcraft-org/step-tracer.git#09b28182c55b24c403a260f06b90631e7fa795ce" }
+source = { git = "https://github.com/edcraft-org/step-tracer.git#f231c6712ea68100818087e97c6207ed0738ab22" }
 
 [[package]]
 name = "typing-extensions"
