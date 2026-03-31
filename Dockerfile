@@ -18,7 +18,7 @@ RUN uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Additional dependencies for backend executor
-RUN uv pip install httpx 'input-gen @ git+https://github.com/edcraft-org/input-gen.git'
+RUN uv pip install httpx
 
 # Create non-root user
 RUN useradd -m -u 10001 appuser

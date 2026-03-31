@@ -22,6 +22,7 @@ dependencies = [
     "pydantic>=2.12.3",
     "query-engine",
     "step-tracer",
+    "input-gen",
 ]
 
 [dependency-groups]
@@ -59,6 +60,7 @@ packages = ["src/edcraft_engine"]
 [tool.uv.sources]
 step-tracer = { git = "https://github.com/edcraft-org/step-tracer.git" }
 query-engine = { git = "https://github.com/edcraft-org/query-engine.git" }
+input-gen = { git = "https://github.com/edcraft-org/input-gen.git" }
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
