@@ -203,4 +203,26 @@ def swap(arr, a, b):
         "generation_options": {"num_distractors": 4},
         "answer": "[3]",
     },
+    {
+        "code": "def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n):\n        swapped = False\n        for j in range(0, n - i - 1):\n            if arr[j] > arr[j + 1]:\n                swap(arr, j, j + 1)\n                swapped = True\n        if not swapped:\n            break\n\ndef swap(arr, a, b):\n    arr[a], arr[b] = arr[b], arr[a]",
+        "execution_spec": {
+            "entry_function": "bubble_sort",
+            "input_data": {"arr": [9, 8, 7, 6]},
+        },
+        "question_spec": {
+            "target": [
+                {
+                    "type": "loop",
+                    "id": [0],
+                    "line_number": 3,
+                    "modifier": "loop_iterations",
+                },
+                {"type": "variable", "id": [0], "name": "arr"},
+            ],
+            "output_type": "last",
+            "question_type": "mcq",
+        },
+        "generation_options": {"num_distractors": 3},
+        "answer": "[[8, 7, 6, 9], [7, 6, 8, 9], [6, 7, 8, 9], [6, 7, 8, 9]]",
+    },
 ]
