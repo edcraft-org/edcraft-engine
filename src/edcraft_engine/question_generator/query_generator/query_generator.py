@@ -170,7 +170,14 @@ class QueryGenerator:
 
     @staticmethod
     def _check_line_number(right: _Item, target: TargetElement) -> bool:
-        return target.line_number is None or right.line_number == target.line_number
+        if target.line_number is None:
+            return True
+        if target.type == _TargetType.FUNCTION:
+            return (
+                getattr(right, "func_def_line_num", None) == target.line_number
+                or right.line_number == target.line_number
+            )
+        return right.line_number == target.line_number
 
     @staticmethod
     def _check_time_range(
@@ -240,13 +247,17 @@ class QueryGenerator:
         query = self._apply_group_by(query)
         last_alias = f"{self.join_idx}"
         return query.agg(
-            count=lambda items: len([
-                item for item in items
-                if item is not None and (
-                    not isinstance(item, JoinResult) or
-                    item.get(last_alias) is not None
-                )
-            ])
+            count=lambda items: len(
+                [
+                    item
+                    for item in items
+                    if item is not None
+                    and (
+                        not isinstance(item, JoinResult)
+                        or item.get(last_alias) is not None
+                    )
+                ]
+            )
         ).select("count")
 
     def _apply_list_output(self, query: Query, target: list[TargetElement]) -> Query:
@@ -254,9 +265,8 @@ class QueryGenerator:
         if self._is_variable_join(last):
             join_idx = self.join_idx
             query = self._apply_group_by(query)
-            picker = self._make_picker(join_idx, before_parent=True)
             return query.agg(
-                list_item=self._make_variable_aggregator(join_idx, last, picker)
+                list_item=self._make_all_values_aggregator(join_idx, last)
             ).select("list_item")
         if (
             self.join_idx == 0
@@ -284,9 +294,18 @@ class QueryGenerator:
             ).select("first_item")
         is_variable_target = last is not None and last.type == _TargetType.VARIABLE
         key = self._make_key(is_variable_target)
-        return query.agg(first_item=lambda items: min(items, key=key)).select(
-            "first_item"
-        )
+        last_alias = f"{self.join_idx}"
+        return query.agg(
+            first_item=lambda items: min(
+                (
+                    x
+                    for x in items
+                    if not isinstance(x, JoinResult) or x.get(last_alias) is not None
+                ),
+                key=key,
+                default=None,
+            )
+        ).select("first_item")
 
     def _apply_last_output(self, query: Query, target: list[TargetElement]) -> Query:
         last = self._last_target(target)
@@ -299,9 +318,18 @@ class QueryGenerator:
             ).select("last_item")
         is_variable_target = last is not None and last.type == _TargetType.VARIABLE
         key = self._make_key(is_variable_target)
-        return query.agg(last_item=lambda items: max(items, key=key)).select(
-            "last_item"
-        )
+        last_alias = f"{self.join_idx}"
+        return query.agg(
+            last_item=lambda items: max(
+                (
+                    x
+                    for x in items
+                    if not isinstance(x, JoinResult) or x.get(last_alias) is not None
+                ),
+                key=key,
+                default=None,
+            )
+        ).select("last_item")
 
     def _make_key(
         self, is_variable_target: bool
@@ -375,6 +403,20 @@ class QueryGenerator:
                 return max(candidates, key=var_key) if candidates else None
 
         return picker
+
+    def _make_all_values_aggregator(
+        self,
+        join_idx: int,
+        last: TargetElement | None,
+    ) -> Callable[[list[Any]], Any]:
+        def aggregator(items: list[Any]) -> Any:
+            candidates = sorted(
+                (x for x in items if x.get(f"{join_idx}") is not None),
+                key=lambda x: x.get(f"{join_idx}").var_id,
+            )
+            return [x.get(f"{join_idx}").value for x in candidates]
+
+        return aggregator
 
     def _make_variable_aggregator(
         self,
@@ -473,7 +515,7 @@ class QueryGenerator:
             if last.name is not None:
                 if not (
                     output_type == "list" and self.join_idx == 0 and "," in last.name
-                ):
+                ) and not (output_type == "list" and self._is_variable_join(last)):
                     query = query.select(f"{prefix}value")
             else:
                 query = query.select(f"{prefix}name", f"{prefix}value")

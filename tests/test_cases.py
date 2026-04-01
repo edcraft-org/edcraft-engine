@@ -255,4 +255,19 @@ def swap(arr, a, b):
         "generation_options": {"num_distractors": 3},
         "answer": "[0, 1, 0, 1, 1]",
     },
+    {
+        "code": "def func1(n):\n    def func2(n):\n        n = n + 1\n        return n\n    def func3(n):\n        n = n + 2\n        return n\n    return func2(n) + func3(n)",
+        "execution_spec": {"entry_function": "func1", "input_data": {"n": 5}},
+        "question_spec": {
+            "target": [
+                {"type": "function", "id": [0], "name": "func1", "line_number": 1},
+                {"type": "function", "id": [1], "name": "func2", "line_number": 2},
+                {"type": "variable", "id": [0], "name": "n"},
+            ],
+            "output_type": "list",
+            "question_type": "short_answer",
+        },
+        "generation_options": {"num_distractors": 4},
+        "answer": "[[5, 6]]",
+    },
 ]
