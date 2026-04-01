@@ -225,4 +225,34 @@ def swap(arr, a, b):
         "generation_options": {"num_distractors": 3},
         "answer": "[[8, 7, 6, 9], [7, 6, 8, 9], [6, 7, 8, 9], [6, 7, 8, 9]]",
     },
+    # [loop(loop_iterations), branch(branch_true)]: per-iteration count of branch_true
+    {
+        "code": "def count_positives(arr):\n    count = 0\n    for x in arr:\n        if x > 0:\n            count += 1\n    return count\n",
+        "execution_spec": {
+            "entry_function": "count_positives",
+            "input_data": {"arr": [-1, 2, -3, 4, 5]},
+        },
+        "question_spec": {
+            "target": [
+                {
+                    "type": "loop",
+                    "id": [0],
+                    "name": None,
+                    "line_number": 3,
+                    "modifier": "loop_iterations",
+                },
+                {
+                    "type": "branch",
+                    "id": [0],
+                    "name": None,
+                    "line_number": 4,
+                    "modifier": "branch_true",
+                },
+            ],
+            "output_type": "count",
+            "question_type": "mcq",
+        },
+        "generation_options": {"num_distractors": 3},
+        "answer": "[0, 1, 0, 1, 1]",
+    },
 ]

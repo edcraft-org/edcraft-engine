@@ -238,8 +238,15 @@ class QueryGenerator:
 
     def _apply_count_output(self, query: Query) -> Query:
         query = self._apply_group_by(query)
+        last_alias = f"{self.join_idx}"
         return query.agg(
-            count=lambda items: len([item for item in items if item is not None])
+            count=lambda items: len([
+                item for item in items
+                if item is not None and (
+                    not isinstance(item, JoinResult) or
+                    item.get(last_alias) is not None
+                )
+            ])
         ).select("count")
 
     def _apply_list_output(self, query: Query, target: list[TargetElement]) -> Query:
