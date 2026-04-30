@@ -1,15 +1,12 @@
 # Static Analyser
 
-The Static Analyser extracts structural information from Python source code without executing it. It parses code using Python's AST (Abstract Syntax Tree) to identify functions, loops, branches, variables, and their scope relationships - providing the foundation for code analysis and question generation.
+The Static Analyser extracts structural information from Python source code without executing it. It parses code using Python's AST (Abstract Syntax Tree) to identify functions, loops, branches, variables, and their scope relationships.
 
 ## Overview
 
 When analyzing code, we need to understand:
-- What functions are defined and called
-- Where loops and conditional branches occur
-- What variables exist and in what scope
+- Code elements like functions, loops and branches
 - The hierarchical structure of code elements
-- Parent-child relationships between code blocks
 
 The Static Analyser accomplishes this by:
 1. Parsing Python source code into an AST
@@ -17,49 +14,23 @@ The Static Analyser accomplishes this by:
 3. Tracking scope and variable visibility
 4. Building a hierarchical model of code structure
 
-## Architecture
+## Static Analyser
 
-### Core Components
-
-```
-static_analyser/
-├── static_analyser.py    # Main StaticAnalyser class
-└── models.py             # Data models (Scope, CodeElement, etc.)
-```
-
-### StaticAnalyser
-
-The main class that performs static analysis using Python's `ast.NodeVisitor`.
-
-**Key responsibilities:**
 - Parse source code into an AST
 - Track scope hierarchy as it traverses the tree
 - Record functions, loops, and branches
 - Manage variable visibility across scopes
 - Build parent-child relationships between code elements
 
-**Data tracked:**
-- `functions`: List of all function definitions and calls
-- `loops`: List of all for and while loops
-- `branches`: List of all if/elif statements
-- `root_scope`: The module-level scope
-- `root_element`: The top-level code element
-
-## How It Works
+## Usage
 
 ### Initialization
 
 ```python
 from edcraft_engine.static_analyser import StaticAnalyser
 
-# Create a StaticAnalyser
 analyser = StaticAnalyser()
 ```
-
-The analyser initializes with:
-- A root scope representing module-level variables
-- A root code element representing the entire module
-- Empty lists for tracking functions, loops, and branches
 
 ### Analysis Flow
 
@@ -77,7 +48,7 @@ The `analyse()` method processes source code in these steps:
 The analyser maintains a stack-like scope hierarchy:
 
 ```python
-# Module scope (root)
+Module scope (root)
 ├── Function scope (foo)
 │   ├── Variables: [x, y]
 │   └── Loop scope (for loop)
@@ -96,7 +67,7 @@ As the visitor traverses the AST:
 Code elements form a tree structure mirroring the code's logical organization:
 
 ```python
-# Root element (module)
+Root element (module)
 ├── Function element (foo)
 │   ├── Loop element (for loop)
 │   └── Branch element (if statement)
@@ -115,19 +86,6 @@ As the visitor traverses:
 
 Represents a variable scope with parent-child relationships.
 
-```python
-class Scope:
-    parent: Scope | None           # Parent scope (None for root)
-    variables: set[str]            # Variables defined in this scope
-    children: list[Scope]          # Child scopes
-
-    @property
-    def visible_variables(self) -> set[str]:
-        # Returns all variables visible in this scope
-        # (includes parent scope variables)
-```
-
-**Key features:**
 - Automatic parent-child linking on initialization
 - `visible_variables` property provides lexical scoping
 - Tracks variables defined at this scope level
@@ -136,17 +94,8 @@ class Scope:
 
 Base class for all code structure elements.
 
-```python
-class CodeElement:
-    id: int                        # Unique identifier
-    type: str                      # Element type (module, function, loop, branch)
-    lineno: int                    # Line number in source code
-    scope: Scope                   # Associated scope
-    parent: CodeElement | None     # Parent element
-    children: list[CodeElement]    # Child elements
-```
-
-**Properties for querying descendants:**
+- `id`: unique identifier
+- `type`: element type (module, function, loop, branch)
 - `functions`: All function elements in subtree
 - `loops`: All loop elements in subtree
 - `branches`: All branch elements in subtree
@@ -156,14 +105,6 @@ class CodeElement:
 
 Represents a function definition or call.
 
-```python
-class Function(CodeElement):
-    name: str                      # Function name or call chain (e.g., "obj.method")
-    parameters: list[str]          # Parameter names (for definitions)
-    is_definition: bool            # True for def, False for calls
-```
-
-**Usage:**
 - Function definitions: `is_definition=True`, includes parameters
 - Function calls: `is_definition=False`, name may include attribute access (e.g., `list.append`)
 
@@ -171,28 +112,18 @@ class Function(CodeElement):
 
 Represents a for or while loop.
 
-```python
-class Loop(CodeElement):
-    loop_type: str                 # "for" or "while"
-    condition: str                 # Loop condition as string
-```
-
-**Examples:**
-- For loop: `loop_type="for"`, `condition="i in range(10)"`
-- While loop: `loop_type="while"`, `condition="x < 100"`
+- `loop_type`: `for` / `while`
+- `condition`: loop condition as string (e.g. `x < 100`, `i in range(10)`)
 
 ### Branch
 
 Represents an if statement.
 
-```python
-class Branch(CodeElement):
-    condition: str                 # Branch condition as string
-```
+- `condition`: branch condition as string
 
-**Note:** Tracks the if statement; elif and else are part of the if node's structure.
+Tracks the if statement; elif and else are part of the if node's structure.
 
-### CodeAnalysis
+## CodeAnalysis
 
 The complete analysis result containing all extracted information.
 
@@ -308,61 +239,6 @@ print(f"Visible in inner: {inner_func.scope.visible_variables}")
 # Output: {'b', 'z', 'a', 'y', 'inner', 'x'}
 ```
 
-### Example 4: Hierarchy Navigation
-
-```python
-code = """
-def foo():
-    for i in range(10):
-        if i % 2 == 0:
-            print(i)
-"""
-
-analyser = StaticAnalyser()
-analysis = analyser.analyse(code)
-
-# Navigate from root to nested elements
-root = analysis.root_element
-print(f"Root children: {len(root.children)}")   # 1 (foo function)
-
-foo_func = root.children[0]
-print(f"Foo children: {len(foo_func.children)}") # 1 (for loop)
-
-for_loop = foo_func.children[0]
-print(f"Loop children: {len(for_loop.children)}") # 2 (if branch + print call)
-
-# Query all functions in foo
-print(f"Functions in foo: {len(foo_func.functions)}")  # 2 (range, print calls)
-```
-
-### Example 5: Distinguishing Definitions from Calls
-
-```python
-code = """
-def greet(name):
-    message = f"Hello, {name}"
-    print(message)
-
-greet("Alice")
-greet("Bob")
-"""
-
-analyser = StaticAnalyser()
-analysis = analyser.analyse(code)
-
-# Separate definitions from calls
-definitions = [f for f in analysis.functions if f.is_definition]
-calls = [f for f in analysis.functions if not f.is_definition]
-
-print(f"Definitions: {[f.name for f in definitions]}")  # ['greet']
-print(f"Calls: {[f.name for f in calls]}")              # ['print', 'greet', 'greet']
-
-# Count function call occurrences
-from collections import Counter
-call_counts = Counter(f.name for f in calls)
-print(f"greet called: {call_counts['greet']} times")    # 2 times
-```
-
 ## Implementation Details
 
 ### AST Visitor Pattern
@@ -447,14 +323,3 @@ if len(items) > 0:      # Condition: "len(items) > 0"
 ```
 
 This preserves the original logic as human-readable text.
-
-## Integration with Question Generator
-
-The Static Analyser provides structural information used by the Question Generator:
-
-1. **Function Tracking**: Identifies functions to target in questions
-2. **Scope Analysis**: Determines which variables are visible at each point
-3. **Element Hierarchy**: Maps code structure for navigating execution traces
-4. **Line Numbers**: Links code elements to specific source lines
-
-This static analysis complements dynamic analysis (execution tracing) to enable comprehensive questions.

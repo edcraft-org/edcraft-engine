@@ -14,6 +14,9 @@ class StaticAnalyser(ast.NodeVisitor):
     """Extracts static information from Python source code."""
 
     def __init__(self) -> None:
+        self._initialse_analysis_state()
+
+    def _initialse_analysis_state(self) -> None:
         self.root_scope = Scope()
         self.root_element = CodeElement(
             id=0,
@@ -35,6 +38,7 @@ class StaticAnalyser(ast.NodeVisitor):
         """Analyse the given source code and return the code analysis."""
         try:
             tree = ast.parse(source_code)
+            self._initialse_analysis_state()
             self.visit(tree)
         except SyntaxError as e:
             raise ValueError("Invalid Python source code") from e
