@@ -45,6 +45,9 @@ class QueryGenerator:
         self, target: list[TargetElement], output_type: OutputType
     ) -> Query:
         """Generates a query based on the provided question request."""
+        self._first_target_done = False
+        self.join_idx = 0
+
         query = self.query_engine.create_query()
 
         for target_element in target:
