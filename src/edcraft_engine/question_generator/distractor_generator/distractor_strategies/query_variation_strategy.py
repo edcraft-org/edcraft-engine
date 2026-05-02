@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, override
@@ -18,6 +19,8 @@ from edcraft_engine.question_generator.models import (
 from edcraft_engine.question_generator.query_generator.query_generator import (
     QueryGenerator,
 )
+
+logger = logging.getLogger(__name__)
 
 # =========================
 # Query Executor Abstraction
@@ -95,7 +98,8 @@ class QueryVariationStrategy(DistractorStrategy):
                     variation.target,
                     variation.output_type,
                 )
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to generate variation: %s", e)
                 continue  # safe fallback
 
             for item in results:

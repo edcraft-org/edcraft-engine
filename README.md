@@ -1,25 +1,35 @@
 # EdCraft Engine
 
-A Python package for generating algorithmic questions through code analysis and execution tracing. EdCraft Engine analyzes Python source code both statically and dynamically to create educational questions about code behavior, making it ideal for programming education and assessment.
+EdCraft Engine is a Python library for generating **algorithmic programming questions** through code analysis and execution tracing.
+
+It analyzes Python code both **statically (structure)** and **dynamically (runtime behavior)** to automatically generate educational questions about how code works, making it useful for learning programming and creating assessments.
 
 ## Features
 
-- **Static Code Analysis**: Extract structural information from Python code using AST parsing
-- **Question Generation**: Create multiple-choice, multiple-response, and short-answer questions
-- **Smart Distractors**: Generate plausible incorrect options for multiple-choice questions
-- **Execution Tracing**: Trace code execution to extract runtime behavior
-- **Flexible Targeting**: Query specific functions, loops, variables, and return values
-- **Template Previews**: Generate question templates without executing code
+* **Static Code Analysis**
+  Extract structural information (functions, loops, branches, variables) using AST parsing
+
+* **Execution Tracing**
+  Track runtime behavior to understand how code executes step by step
+
+* **Question Generation**
+  Generate multiple-choice (MCQ), multiple-response (MRQ), and short-answer questions
+
+* **Distractor Generation**
+  Produce plausible incorrect answers based on execution context and common mistakes
+
+* **Flexible Targeting**
+  Ask questions about specific functions, variables, loops, or return values
 
 ## Installation
 
-Install using pip:
+Install via pip:
 
 ```bash
 pip install edcraft-engine
 ```
 
-Or using uv:
+Or with uv:
 
 ```bash
 uv add edcraft-engine
@@ -35,7 +45,7 @@ make install
 
 ## Quick Start
 
-Here's a simple example of generating a multiple-choice question:
+This example generates a multiple-choice question from a Python function.
 
 ```python
 from edcraft_engine import QuestionGenerator
@@ -46,10 +56,8 @@ from edcraft_engine.question_generator import (
     TargetElement,
 )
 
-# Initialize the generator
 generator = QuestionGenerator()
 
-# Define the code to analyze
 code = """
 def calculate_sum(arr):
     total = 0
@@ -58,27 +66,24 @@ def calculate_sum(arr):
     return total
 """
 
-# Specify what to ask about
 question_spec = QuestionSpec(
     target=[
         TargetElement(
             type="function",
             name="calculate_sum",
             modifier="return_value",
-            id=[0]
+            id=[0],
         )
     ],
     output_type="first",
-    question_type="mcq"
+    question_type="mcq",
 )
 
-# Specify execution parameters
 execution_spec = ExecutionSpec(
     entry_function="calculate_sum",
-    input_data={"arr": [1, 2, 3, 4, 5]}
+    input_data={"arr": [1, 2, 3, 4, 5]},
 )
 
-# Generate the question
 question = generator.generate_question(
     code=code,
     question_spec=question_spec,
@@ -87,61 +92,75 @@ question = generator.generate_question(
 )
 
 print(question.text)
-# Output: "During execution, what is the return value of the first function
-#          `calculate_sum()` call? Choose the correct option.
-#          Given input: arr = [1, 2, 3, 4, 5]"
-
 print(question.options)
-# Output: [13, 15, 14, 16] (shuffled, with correct answer included)
-
 print(question.answer)
-# Output: "15"
 ```
+
+### What happens here?
+
+1. The code is **instrumented and executed**
+2. Execution is **traced step-by-step**
+3. A **query extracts the correct answer**
+4. Distractors are generated based on context
+5. A complete question is assembled
+
+## How It Works
+
+EdCraft Engine follows a pipeline:
+
+```
+Code → Static Analysis → Execution Tracing → Querying → Question Generation
+```
+
+* **Static analysis** identifies structure (functions, loops, etc.)
+* **Execution tracing** captures runtime values and flow
+* **Querying** extracts the specific answer
+* **Generators** produce the final question and distractors
 
 ## Project Structure
 
 ```
 edcraft-engine/
 ├── src/edcraft_engine/
-│   ├── question_generator/     # Question generation orchestration
-│   │   ├── text_generator/     # Natural language question text generation
-│   │   ├── query_generator/    # Answer extraction from execution traces
-│   │   └── distractor_generator/ # Incorrect option generation
-│   └── static_analyser/        # Static code analysis using AST
-├── tests/                      # Test suite
-├── pyproject.toml             # Project configuration
-└── README.md                  # This file
+│   ├── question_generator/
+│   │   ├── text_generator/
+│   │   ├── query_generator/
+│   │   └── distractor_generator/
+│   └── static_analyser/
+├── tests/
+├── pyproject.toml
+└── README.md
 ```
 
 ## Core Components
 
 ### Question Generator
 
-The orchestration layer that coordinates all components to generate complete questions. It executes code, traces execution, generates question text, computes answers, and creates distractors.
+Coordinates the full pipeline: execution, tracing, answer extraction, and question assembly.
 
 [Learn more →](src/edcraft_engine/question_generator/README.md)
 
 ### Static Analyser
 
-Extracts structural information from Python source code without executing it. Identifies functions, loops, branches, variables, and their scope relationships using AST parsing.
+Parses Python code using AST to extract structure without executing it.
 
 [Learn more →](src/edcraft_engine/static_analyser/README.md)
 
 ### Text Generator
 
-Generates natural language question text from question specifications. Creates human-readable questions that ask about code execution behavior.
+Generates natural language questions from specifications.
 
 [Learn more →](src/edcraft_engine/question_generator/text_generator/README.md)
 
 ### Query Generator
 
-Extracts answers from execution traces by building and executing queries against traced program state.
+Builds and executes queries on execution traces to extract answers.
 
 [Learn more →](src/edcraft_engine/question_generator/query_generator/README.md)
 
 ### Distractor Generator
 
-Creates plausible incorrect options for multiple-choice questions using various strategies like value modification, common mistakes, and pattern-based generation.
+Generates plausible incorrect options for MCQ/MRQ questions.
 
 [Learn more →](src/edcraft_engine/question_generator/distractor_generator/README.md)
 
@@ -150,49 +169,44 @@ Creates plausible incorrect options for multiple-choice questions using various 
 ### Setup
 
 ```bash
-# Install dependencies
 make install
-
-# Run tests
-make test
-
-# Run linter
-make lint
-
-# Run type checker
-make type-check
-
-# Run all checks
-make all-checks
 ```
 
-### Testing
-
-Tests are written using pytest:
+### Run Tests
 
 ```bash
+make test
+# or
 uv run pytest
 ```
 
 ### Code Quality
 
-The project uses:
-- **Ruff** for linting and code formatting
-- **MyPy** for static type checking
-- **Pre-commit** hooks for automated checks
+```bash
+make lint
+make type-check
+make all-checks
+```
+
+Tools used:
+
+* **Ruff** (linting & formatting)
+* **MyPy** (type checking)
+* **Pre-commit** (automated checks)
 
 ## Dependencies
 
-- Python 3.12+
-- [step-tracer](https://github.com/edcraft-org/step-tracer): Code execution tracing
-- [query-engine](https://github.com/edcraft-org/query-engine): Query execution against traces
-- Pydantic 2.12+: Data validation and modeling
+* Python 3.12+
+* [step-tracer](https://github.com/edcraft-org/step-tracer)
+* [query-engine](https://github.com/edcraft-org/query-engine)
+* Pydantic 2.12+
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE)
 
 ## Related Projects
 
-- [step-tracer](https://github.com/edcraft-org/step-tracer): Execution tracing library
-- [query-engine](https://github.com/edcraft-org/query-engine): Query execution engine
+* [step-tracer](https://github.com/edcraft-org/step-tracer)
+* [query-engine](https://github.com/edcraft-org/query-engine)
+* [input-gen](https://github.com/edcraft-org/input-gen)

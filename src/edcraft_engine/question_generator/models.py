@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 TargetElementType = Literal["function", "loop", "branch", "variable"]
 OutputType = Literal["list", "count", "first", "last"]
@@ -34,9 +34,10 @@ class TargetElement(BaseModel):
         "Single key returns a scalar; multiple keys return a sub-dict.",
     )
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def validate_modifier(self) -> "TargetElement":
         if not self.modifier:
-            return
+            return self
 
         if self.modifier == "loop_iterations" and self.type != "loop":
             raise ValueError("Loop iterations modifier is only valid for loops.")
@@ -47,6 +48,7 @@ class TargetElement(BaseModel):
         if self.modifier in ("arguments", "return_value") and self.type != "function":
             raise ValueError("Function modifiers are only valid for functions.")
 
+        return self
 
 class Question(BaseModel):
     """Represents a generated question."""

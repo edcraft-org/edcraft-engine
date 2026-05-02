@@ -52,7 +52,9 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "I", "N", "UP", "B", "A", "S", "T20", "Q"]
-ignore = ["S101", "S102", "E501"]
+ignore = [
+    "E501", # Allow long lines
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/edcraft_engine"]
@@ -65,5 +67,7 @@ input-gen = { git = "https://github.com/edcraft-org/input-gen.git" }
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
     "S101", # Allow asserts in tests
+]
+"tests/test_cases.py" = [
     "W293", # Allow blank lines in test case codes
 ]

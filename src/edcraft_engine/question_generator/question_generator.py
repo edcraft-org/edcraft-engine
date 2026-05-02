@@ -55,8 +55,9 @@ class QuestionGenerator:
             and query_gen.join_idx == 0
             and query_results
         ):
+            # If no joins were applied (join_idx == 0), results come nested → unwrap
             query_results = query_results[0]
-        answer = f"{query_results}"
+        answer = str(query_results)
 
         # Generate Distractors
         options = None
@@ -140,6 +141,11 @@ class QuestionGenerator:
 
     def _inject_input_data(self, code: str, execution_spec: ExecutionSpec) -> str:
         """Injects input data into the code for tracing."""
+        if execution_spec.input_data is None:
+            return (
+                f"{code}\n\n# Execute the function\n{execution_spec.entry_function}()"
+            )
+
         return f"{code}\n\n# Execute the function\n{execution_spec.entry_function}(**{execution_spec.input_data})"
 
     def _shuffle_options(
