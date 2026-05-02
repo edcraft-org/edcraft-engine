@@ -9,6 +9,12 @@ from edcraft_engine.question_generator.models import QuestionSpec
 class DistractorStrategy(ABC):
     """Abstract base class for distractor generation strategies."""
 
+    priority: float = 0.0
+
+    def score(self) -> float:
+        """Optional dynamic scoring override."""
+        return self.priority
+
     @abstractmethod
     def generate(
         self,

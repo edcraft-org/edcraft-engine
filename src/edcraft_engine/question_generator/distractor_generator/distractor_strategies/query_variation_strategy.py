@@ -1,5 +1,8 @@
-import copy
-from typing import Any, cast, override
+from __future__ import annotations
+
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any, override
 
 from step_tracer import ExecutionContext
 
@@ -16,9 +19,56 @@ from edcraft_engine.question_generator.query_generator.query_generator import (
     QueryGenerator,
 )
 
+# =========================
+# Query Executor Abstraction
+# =========================
+
+
+class QueryExecutor:
+    """Executes queries using a query generator."""
+
+    def __init__(self, query_generator_cls: type[QueryGenerator] = QueryGenerator):
+        self.query_generator_cls = query_generator_cls
+
+    def execute(
+        self,
+        exec_ctx: ExecutionContext,
+        target: list[TargetElement],
+        output_type: OutputType,
+    ) -> list[Any]:
+        generator = self.query_generator_cls(exec_ctx)
+        query = generator.generate_query(target, output_type)
+        return list(query.execute())
+
+
+# =========================
+# Internal Data Structure
+# =========================
+
+
+@dataclass(frozen=True)
+class QueryVariation:
+    target: list[TargetElement]
+    output_type: OutputType
+
+
+# =========================
+# Strategy Implementation
+# =========================
+
 
 class QueryVariationStrategy(DistractorStrategy):
-    """Generates distractors by varying the original question's query."""
+    """
+    Generates distractors by modifying the query specification:
+    - Output type variation
+    - Target path variation
+    - Modifier variation
+    """
+
+    priority: float = 0.9
+
+    def __init__(self, query_executor: QueryExecutor | None = None):
+        self.query_executor = query_executor or QueryExecutor()
 
     @override
     def generate(
@@ -28,123 +78,90 @@ class QueryVariationStrategy(DistractorStrategy):
         question_spec: QuestionSpec,
         num_distractors: int,
     ) -> list[Any]:
-        distractors: list[Any] = []
-
-        # Vary output type
-        distractors.extend(
-            self._generate_output_type_variations(
-                exec_ctx, question_spec.target, question_spec.output_type
-            )
-        )
-
-        # Vary target path (remove context layers)
-        distractors.extend(
-            self._generate_target_path_variations(
-                correct_options,
-                exec_ctx,
-                question_spec.target,
-                question_spec.output_type,
-                num_distractors,
-            )
-        )
-
-        # Vary modifiers
-        distractors.extend(
-            self._generate_modifier_variations(
-                correct_options,
-                exec_ctx,
-                question_spec.target,
-                question_spec.output_type,
-                num_distractors,
-            )
-        )
-
-        # Match answer format
-        formatted_distractors: list[Any] = []
-        for dist in distractors:
-            dist = self._match_answer_format(correct_options[0], dist)
-            if dist is not None:
-                formatted_distractors.append(dist)
-        distractors = formatted_distractors
-
-        # Deduplicate distractors
-        distractors = self._deduplicate_distractors(correct_options, distractors)
-
-        return distractors[:num_distractors]
-
-    def _generate_output_type_variations(
-        self,
-        exec_ctx: ExecutionContext,
-        target: list[TargetElement],
-        output_type: OutputType,
-    ) -> list[Any]:
-        """Generate distractors by varying the output type."""
-        if output_type not in ("first", "last"):
+        if not correct_options or num_distractors <= 0:
             return []
 
-        try:
-            modified_query_result = self._run_modified_query(
-                target, output_type, exec_ctx, modified_output_type="list"
-            )
-            return modified_query_result
-        except Exception:
-            return []
+        variations = self._build_variations(question_spec)
 
-    def _generate_target_path_variations(
-        self,
-        correct_answers: list[Any],
-        exec_ctx: ExecutionContext,
-        target: list[TargetElement],
-        output_type: OutputType,
-        num_distractors: int,
-    ) -> list[Any]:
-        """Generate distractors by varying the target path (removing context layers)."""
-        distractors: list[Any] = []
+        candidates: list[Any] = []
 
-        if len(target) <= 1:
-            # No context to remove
-            return distractors
-
-        for i in range(len(target) - 1):
-            modified_target = target[:i] + target[i + 1 :]
-            self._run_and_clean_modified_query(
-                correct_answers[0],
-                distractors,
-                target,
-                output_type,
-                exec_ctx,
-                modified_target,
-                num_distractors,
-            )
-            if len(distractors) >= num_distractors:
+        for variation in variations:
+            if len(candidates) >= num_distractors:
                 break
 
-        # Only include final target element
-        modified_target = [target[-1]]
-        self._run_and_clean_modified_query(
-            correct_answers[0],
-            distractors,
-            target,
-            output_type,
-            exec_ctx,
-            modified_target,
-            num_distractors,
+            try:
+                results = self.query_executor.execute(
+                    exec_ctx,
+                    variation.target,
+                    variation.output_type,
+                )
+            except Exception:
+                continue  # safe fallback
+
+            for item in results:
+                extracted = self._extract_candidates(correct_options[0], item)
+
+                for candidate in extracted:
+                    validated = self._validate_and_format(correct_options[0], candidate)
+
+                    if validated is not None:
+                        candidates.append(validated)
+
+        return self._deduplicate(correct_options, candidates)[:num_distractors]
+
+    # =========================
+    # Variation Builders
+    # =========================
+
+    def _build_variations(self, spec: QuestionSpec) -> list[QueryVariation]:
+        return (
+            self._output_type_variations(spec)
+            + self._target_variations(spec)
+            + self._modifier_variations(spec)
         )
 
-        return distractors
+    def _output_type_variations(self, spec: QuestionSpec) -> list[QueryVariation]:
+        variations: list[QueryVariation] = []
 
-    def _generate_modifier_variations(
-        self,
-        correct_answers: list[Any],
-        exec_ctx: ExecutionContext,
-        target: list[TargetElement],
-        output_type: OutputType,
-        num_distractors: int,
-    ) -> list[Any]:
-        """Generate distractors by varying modifiers"""
-        distractors: list[Any] = []
+        if spec.output_type in ("first", "last"):
+            variations.append(
+                QueryVariation(
+                    target=spec.target,
+                    output_type="list",
+                )
+            )
 
-        modifier_variations: dict[str, list[TargetModifier | None]] = {
+        return variations
+
+    def _target_variations(self, spec: QuestionSpec) -> list[QueryVariation]:
+        target = spec.target
+        variations: list[QueryVariation] = []
+
+        if len(target) <= 1:
+            return variations
+
+        # Remove one layer at a time
+        for i in range(len(target)):
+            modified = target[:i] + target[i + 1 :]
+            if modified:
+                variations.append(
+                    QueryVariation(target=modified, output_type=spec.output_type)
+                )
+
+        # Only final element
+        variations.append(
+            QueryVariation(
+                target=[target[-1]],
+                output_type=spec.output_type,
+            )
+        )
+
+        return variations
+
+    def _modifier_variations(self, spec: QuestionSpec) -> list[QueryVariation]:
+        variations: list[QueryVariation] = []
+
+        modifier_map: dict[str, list[TargetModifier | None]] = {
             "branch_true": ["branch_false", None],
             "branch_false": ["branch_true", None],
             "loop_iterations": [None],
@@ -152,130 +169,111 @@ class QueryVariationStrategy(DistractorStrategy):
             "loop": ["loop_iterations"],
         }
 
-        for i, target_element in enumerate(target):
-            if (
-                target_element.modifier is not None
-                and target_element.modifier in modifier_variations
-            ):
-                for new_modifier in modifier_variations[target_element.modifier]:
-                    modified_target = copy.deepcopy(target)
-                    modified_target[i].modifier = new_modifier
-                    self._run_and_clean_modified_query(
-                        correct_answers[0],
-                        distractors,
-                        target,
-                        output_type,
-                        exec_ctx,
-                        modified_target,
-                        num_distractors,
+        for i, element in enumerate(spec.target):
+            candidates: list[TargetModifier | None] = []
+
+            if element.modifier and element.modifier in modifier_map:
+                candidates = modifier_map[element.modifier]
+            elif element.modifier is None and element.type in modifier_map:
+                candidates = modifier_map[element.type]
+
+            for new_modifier in candidates:
+                modified_target = self._copy_target(spec.target)
+                modified_target[i].modifier = new_modifier
+
+                variations.append(
+                    QueryVariation(
+                        target=modified_target,
+                        output_type=spec.output_type,
                     )
-                    if len(distractors) >= num_distractors:
-                        break
-            if (
-                target_element.modifier is None
-                and target_element.type in modifier_variations
-            ):
-                for new_modifier in modifier_variations[target_element.type]:
-                    modified_target = copy.deepcopy(target)
-                    modified_target[i].modifier = new_modifier
-                    self._run_and_clean_modified_query(
-                        correct_answers[0],
-                        distractors,
-                        target,
-                        output_type,
-                        exec_ctx,
-                        modified_target,
-                        num_distractors,
-                    )
-                    if len(distractors) >= num_distractors:
-                        break
-            if len(distractors) >= num_distractors:
-                break
-        return distractors
+                )
 
-    def _run_and_clean_modified_query(
-        self,
-        correct_answer: Any,
-        distractors: list[Any],
-        target: list[TargetElement],
-        output_type: OutputType,
-        exec_ctx: ExecutionContext,
-        modified_target: list[TargetElement],
-        num_distractors: int,
-    ) -> None:
-        try:
-            modified_query_result = self._run_modified_query(
-                target, output_type, exec_ctx, modified_target_path=modified_target
-            )
-            for item in modified_query_result:
-                modified_item = self._match_answer_format(correct_answer, item)
-                distractors.append(modified_item)
-                if len(distractors) >= num_distractors:
-                    break
-        except Exception:
-            pass
+        return variations
 
-    def _run_modified_query(
-        self,
-        target: list[TargetElement],
-        output_type: OutputType,
-        exec_ctx: ExecutionContext,
-        modified_output_type: OutputType | None = None,
-        modified_target_path: list[TargetElement] | None = None,
-    ) -> list[Any]:
-        # Use modified values if provided, otherwise use original
-        final_output_type = (
-            modified_output_type if modified_output_type else output_type
-        )
-        final_target = modified_target_path if modified_target_path else target
+    # =========================
+    # Helpers
+    # =========================
 
-        query_generator = QueryGenerator(exec_ctx)
-        query = query_generator.generate_query(final_target, final_output_type)
-        return list(query.execute())
+    def _copy_target(self, target: list[TargetElement]) -> list[TargetElement]:
+        return [element.model_copy(deep=True) for element in target]
 
-    def _match_answer_format(self, ref_answer: Any, distractor: Any) -> Any:
-        """Ensure distractors match the format of the correct answer."""
-        if isinstance(ref_answer, type(distractor)) and not isinstance(
-            ref_answer, list
-        ):
-            return distractor
+    def _format_results(self, ref: Any, results: Iterable[Any]) -> list[Any]:
+        formatted: list[Any] = []
 
-        if isinstance(ref_answer, list) and not isinstance(distractor, list):
-            return [distractor]
+        for item in results:
+            validated = self._validate_and_format(ref, item)
+            if validated is not None:
+                formatted.append(validated)
 
-        if not isinstance(ref_answer, list) and isinstance(distractor, list):
-            return self._match_answer_format(ref_answer, distractor[0])
+        return formatted
 
-        if isinstance(ref_answer, list) and isinstance(distractor, list):
-            distractor = cast(list[Any], distractor)
-            ref_answer = cast(list[Any], ref_answer)
+    def _extract_candidates(self, ref: Any, value: Any) -> list[Any]:
+        """Extract candidate values from query output."""
 
-            if len(ref_answer) == 0 or len(distractor) == 0:
+        if self._is_internal_object(value):
+            return []
+
+        # Scalar expected → flatten
+        if not isinstance(ref, list):
+            if isinstance(value, list):
+                return list(value)
+            return [value]
+
+        # List expected
+        return [value] if not isinstance(value, list) else value
+
+    def _validate_and_format(self, ref: Any, value: Any) -> Any | None:
+        """
+        Validate and normalize value to match ref format.
+        """
+
+        if self._is_internal_object(value):
+            return None
+
+        # Scalar
+        if not isinstance(ref, list):
+            if isinstance(value, list):
+                if len(value) != 1:
+                    return None
+                value = value[0]
+
+            return value if isinstance(value, type(ref)) else None
+
+        # List
+        if not isinstance(value, list):
+            value = [value]
+
+        if not ref or not value:
+            return None
+
+        # Enforce same length
+        if len(ref) != len(value):
+            return None
+
+        ref_elem = ref[0]
+
+        for v in value:
+            if not isinstance(v, type(ref_elem)):
                 return None
 
-            if isinstance(ref_answer[0], list) and not isinstance(distractor[0], list):
-                return [self._match_answer_format(ref_answer[0], distractor)]
+        return value
 
-            return [
-                self._match_answer_format(ref_answer[0], distractor[i])
-                for i in range(len(distractor))
-            ]
+    def _is_internal_object(self, value: Any) -> bool:
+        """Reject engine-specific objects."""
+        return hasattr(value, "__dict__") and not isinstance(
+            value, (int, float, str, list, dict, tuple, bool)
+        )
 
-        return None
-
-    def _deduplicate_distractors(
+    def _deduplicate(
         self, correct_options: list[Any], distractors: list[Any]
     ) -> list[Any]:
-        """Remove duplicates and the correct answer from distractors."""
-        unique_distractors: list[Any] = []
-        seen: set[str] = set()
-        for ans in correct_options:
-            seen.add(str(ans))
+        seen = {str(opt) for opt in correct_options}
+        unique: list[Any] = []
 
-        for dist in distractors:
-            dist_key = str(dist)
-            if dist_key not in seen:
-                seen.add(dist_key)
-                unique_distractors.append(dist)
+        for d in distractors:
+            key = str(d)
+            if key not in seen:
+                seen.add(key)
+                unique.append(d)
 
-        return unique_distractors
+        return unique

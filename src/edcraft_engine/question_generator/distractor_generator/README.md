@@ -1,216 +1,215 @@
 # Distractor Generator
 
-The Distractor Generator creates plausible but incorrect answer options (distractors) for multiple-choice questions (MCQ) and multiple-response questions (MRQ). It uses a strategy-based architecture to generate distractors that are similar to the correct answer but contain subtle differences.
+The **Distractor Generator** creates plausible but incorrect answer options for MCQ and MRQ questions.
 
-## Overview
+It works by generating answers that are:
 
-When generating questions about code execution, the system needs to provide incorrect options that:
-- Look plausible to someone who hasn't fully understood the code
-- Test specific misconceptions or partial understanding
-- Are similar enough to the correct answer to be challenging
+* Close to the correct answer
+* Structurally similar
+* Slightly incorrect in meaningful ways
 
-The Distractor Generator accomplishes this by applying various strategies to modify correct answers in controlled ways.
+## Core Idea
 
-## Architecture
+Instead of random wrong answers, we generate distractors by:
 
-### Core Components
+1. **Modifying the correct answer** (small mistakes)
+2. **Changing how the answer is queried** (logical variations)
 
-```
-distractor_generator/
-├── distractor_generator.py          # Main orchestrator
-└── distractor_strategies/
-    ├── base_strategy.py              # Abstract base class
-    ├── output_modification_strategy.py  # Modifies answer values
-    └── query_variation_strategy.py   # Varies query parameters
-```
+## How It Works
 
-### DistractorGenerator
+1. Start with the correct answer(s)
+2. Apply strategies one by one
+3. Collect valid distractors
+4. Remove duplicates and correct answers
+5. Return the required number
 
-The main class (distractor_generator.py) orchestrates multiple strategies to generate distractors.
-
-**Key responsibilities:**
-- Manages a list of distractor generation strategies
-- Applies strategies sequentially until enough distractors are generated
-- Deduplicates distractors to ensure unique options
-- Prevents correct answers from appearing as distractors
-
-### Strategy Pattern
-
-All distractor strategies inherit from `DistractorStrategy` (base_strategy.py) and implement:
-
-```python
-def generate(
-    self,
-    correct_options: list[Any],
-    exec_ctx: ExecutionContext,
-    question_spec: QuestionSpec,
-    num_distractors: int,
-) -> list[Any]:
-    pass
-```
-
-## Available Strategies
+## Strategies
 
 ### 1. Output Modification Strategy
 
-**Purpose:** Generates distractors by modifying the values in correct answers while preserving their structure.
+**Idea:** Make small changes to the correct answer.
 
-**Techniques:**
+#### Examples
 
-- **Numeric variations**: For integer values, creates variations by adding/subtracting small amounts (±1, ±2, ±3)
-  - Example: `42` → `[41, 43, 40, 44, 39, 45]`
-  - Maintains sign (doesn't convert negative to positive)
+```python
+correct = 10
+→ generated: 9, 11, 8
+```
 
-- **List variations**: Shuffles list elements to create permutations
-  - Example: `[1, 2, 3]` → `[2, 1, 3]`, `[3, 2, 1]`
+```python
+correct = [1, 2, 3]
 
-- **Dictionary variations**: Modifies values within dictionaries
-  - Varies numeric values
-  - Shuffles list values
-  - Preserves dictionary structure
+# generated:
+→ [2, 1, 3]        # permutation
+→ [1, 3, 3]        # small mutation
+```
 
-**Question type handling:**
-- **MCQ**: Modifies elements within the single correct option
-- **MRQ**: Generates variations of each correct option
+```python
+correct = {"a": 5}
+
+# generated:
+→ {"a": 4}
+→ {"a": 6}
+```
+
+#### Behavior
+
+* Works recursively (handles nested lists/dicts)
+* Changes **one part at a time**
+* Keeps structure intact
 
 ### 2. Query Variation Strategy
 
-**Purpose:** Generates distractors by executing modified versions of the original query against the execution context.
+**Idea:** Change the *question logic* slightly and recompute answers.
 
-**Techniques:**
+#### Techniques
 
-- **Output type variations**: Changes query output type
-  - Example: `first` → `list` (returns all items instead of just first)
+* Change output type:
 
-- **Target path variations**: Removes context layers from the target path
-  - Example: `[function > loop > variable]` → `[function > variable]`
+  ```
+  first → list
+  ```
+* Remove context layers:
 
-- **Modifier variations**: Changes target modifiers
-  - `branch_true` ↔ `branch_false`
-  - `branch` → specific branch paths
-  - `loop` → `loop_iterations`
+  ```
+  function, followed by variable → just variable
+  ```
+* Change modifiers:
+
+  ```
+  branch_true ↔ branch_false
+  ```
+
+#### Example
+
+```python
+correct = 2
+query result (variation) = [1, 3]
+→ distractors = 1, 3
+```
+
+```python
+correct = [6]
+query result = [5]
+→ distractor = [5]
+```
+
+#### Important Rules
+
+* If correct answer is scalar → list outputs are flattened
+* If correct answer is list → structure must match exactly
+* Invalid types (e.g. internal objects) are discarded
 
 ## Usage
 
-### Basic Usage
-
 ```python
-from edcraft_engine.question_generator.distractor_generator import DistractorGenerator
-
-# Create generator with default strategies
 generator = DistractorGenerator()
 
-# Generate distractors
 distractors = generator.generate_distractors(
     correct_options=[42],
     exec_ctx=execution_context,
     question_spec=question_spec,
-    num_distractors=3
-)
-# Result: [41, 43, 40]
-```
-
-### Custom Strategy Configuration
-
-```python
-from edcraft_engine.question_generator.distractor_generator import DistractorGenerator
-from edcraft_engine.question_generator.distractor_generator.distractor_strategies import (
-    OutputModificationStrategy,
-    QueryVariationStrategy,
-)
-
-# Use specific strategies
-generator = DistractorGenerator(
-    strategies=[
-        QueryVariationStrategy(),
-        OutputModificationStrategy(),
-    ]
+    num_distractors=3,
 )
 ```
 
-## How It Works
+## Custom Strategies
 
-### Generation Flow
-
-1. **Initialize seen set**: Track correct options to prevent duplicates
-
-2. **Apply strategies sequentially**: Each strategy generates distractors until target count is reached
-
-3. **Deduplicate**: Filter out distractors that match correct answers or other distractors
-
-4. **Limit results**: Return exactly the requested number of distractors
-
-### Example Generation Process
-
-Given:
-- Correct answer: `[1, 2, 3]`
-- Requested distractors: 3
-
-Process:
-1. OutputModificationStrategy generates shuffled permutations: `[2, 1, 3]`, `[3, 1, 2]`, `[1, 3, 2]`
-2. Distractors are deduplicated (none match correct answer)
-3. Return first 3: `[[2, 1, 3], [3, 1, 2], [1, 3, 2]]`
-
-## Extending with Custom Strategies
-
-### Creating a Custom Strategy
+You can define your own strategy:
 
 ```python
-from edcraft_engine.question_generator.distractor_generator.distractor_strategies import DistractorStrategy
-
 class CustomStrategy(DistractorStrategy):
-    def generate(
-        self,
-        correct_options: list[Any],
-        exec_ctx: ExecutionContext,
-        question_spec: QuestionSpec,
-        num_distractors: int,
-    ) -> list[Any]:
-        distractors = []
-
-        # Your custom distractor generation logic here
-        for option in correct_options:
-            # Generate variations
-            variation = self._create_variation(option)
-            distractors.append(variation)
-
-        return distractors[:num_distractors]
-
-    def _create_variation(self, option: Any) -> Any:
-        # Custom variation logic
-        pass
+    def generate(self, correct_options, exec_ctx, question_spec, num_distractors):
+        return [...]
 ```
 
-### Using Custom Strategies
+Then plug it in:
 
 ```python
 generator = DistractorGenerator(
-    strategies=[
-        CustomStrategy(),
-        OutputModificationStrategy(),
-    ]
+    strategies=[CustomStrategy(), OutputModificationStrategy()]
 )
 ```
 
-## Design Considerations
+## Current Limitations
 
-### Deduplication Strategy
+The current system works but has noticeable limitations:
 
-The generator uses string representation for deduplication:
-```python
-distractor_str = str(distractor)
-if distractor_str not in seen:
-    distractors.append(distractor)
-```
+### 1. Distractor Quality
 
-This works for most data types but may need refinement for complex objects with custom `__str__` methods.
+* Sometimes too obvious (e.g. ±1 for numbers)
+* Sometimes not semantically meaningful
+* Lacks understanding of “common mistakes”
 
-### Strategy Ordering
+### 2. Strategy Priority
 
-Strategies are applied in order. Place more specific or higher-quality strategies first to ensure they're used before fallback strategies.
+* Strategies are applied in order of predefined priority
+* No strong scoring or ranking according to answer/question
 
-### Performance Considerations
+### 3. Type Handling
 
-- Strategies stop generating once `num_distractors` is reached
-- QueryVariationStrategy executes code, which can be slow for complex execution contexts
-- OutputModificationStrategy is lightweight and generates distractors quickly
+* Limited support: int, list, dict
+* No handling for: strings, floats, custom objects, etc.
+
+### 4. Query Variations
+
+* Can produce invalid outputs
+* Requires filtering/validation
+* Not all variations are useful
+
+### 5. Deduplication
+
+* Uses `str()` → can be unreliable for complex objects
+
+## Possible Enhancements
+
+### Better Distractor Quality
+
+* Add semantic-aware mutations
+  * e.g. off-by-one errors in loops
+  * wrong ordering logic
+* Use common misconception patterns
+* Add LLM-based distractor generation
+
+### Strategy Ranking
+
+* Score distractors based on:
+  * similarity to correct answer
+  * difficulty level
+* Prioritize higher-quality ones instead of simple ordering
+
+### Smarter Query Variations
+
+* Filter out low-value variations early
+* Add scoring for variations
+* Track which variations produce useful results
+
+### More Data Type Support
+
+Extend output modification to handle:
+
+* strings (typos, casing, substring errors)
+* floats (rounding, precision errors)
+* tuples / sets
+* nested complex structures
+
+### Better Validation
+
+* Replace heuristic validation with **schema-based validation**
+* Enforce:
+
+  * exact structure
+  * type consistency
+  * expected cardinality
+
+### Strategy Composition
+
+* Combine strategies instead of running independently
+
+  * e.g. query variation → then modify result
+* Allow multi-step transformations
+
+### Performance
+
+* Cache query results
+* Avoid redundant variation execution

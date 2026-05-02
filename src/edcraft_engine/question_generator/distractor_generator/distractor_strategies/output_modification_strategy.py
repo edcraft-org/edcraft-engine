@@ -1,5 +1,6 @@
 import random
-from typing import Any, cast, override
+from collections.abc import Callable
+from typing import Any, override
 
 from step_tracer import ExecutionContext
 
@@ -8,8 +9,20 @@ from edcraft_engine.question_generator.distractor_generator.distractor_strategie
 )
 from edcraft_engine.question_generator.models import QuestionSpec
 
+VariationHandler = Callable[[Any, int], list[Any]]
+
 
 class OutputModificationStrategy(DistractorStrategy):
+    """Generates distractors by modifying correct outputs."""
+
+    priority: float = 0.5
+
+    def __init__(self) -> None:
+        self._registry: dict[type, VariationHandler] = {
+            int: self._numeric,
+            list: self._list,
+            dict: self._dict,
+        }
 
     @override
     def generate(
@@ -19,97 +32,131 @@ class OutputModificationStrategy(DistractorStrategy):
         question_spec: QuestionSpec,
         num_distractors: int,
     ) -> list[Any]:
-        distractors: list[Any] = []
-        seen: set[str] = {str(opt) for opt in correct_options}
-        for correct_option in correct_options:
-            if len(distractors) >= num_distractors:
-                break
-            for var in self._generate_variations(
-                correct_option, num_distractors - len(distractors)
-            ):
-                self._add_distractor(distractors, seen, var)
-        return distractors[:num_distractors]
+        if num_distractors <= 0:
+            return []
 
-    def _generate_variations(self, item: Any, num_needed: int) -> list[Any]:
-        if isinstance(item, int):
-            return self._generate_numeric_variations(item, num_needed)
-        elif isinstance(item, list):
-            return self._generate_list_variations(cast(list[Any], item), num_needed)
-        elif isinstance(item, dict):
-            return self._generate_dict_variations(
-                cast(dict[Any, Any], item), num_needed
-            )
+        distractors: list[Any] = []
+        seen: set[str] = {self._key(opt) for opt in correct_options}
+
+        for option in correct_options:
+            variations = self._generate_variations(option, num_distractors)
+
+            for var in variations:
+                key = self._key(var)
+
+                if var is not None and key not in seen:
+                    distractors.append(var)
+                    seen.add(key)
+
+                if len(distractors) >= num_distractors:
+                    return distractors
+
+        return distractors
+
+    # =========================
+    # Core Dispatcher
+    # =========================
+
+    def _generate_variations(self, item: Any, limit: int) -> list[Any]:
+        handler = self._registry.get(type(item))
+        if handler:
+            return handler(item, limit)
         return []
 
-    def _generate_list_variations(
-        self,
-        correct_option: list[Any],
-        num_needed: int,
-    ) -> list[Any]:
+    # =========================
+    # List Handling
+    # =========================
+
+    def _list(self, value: list[Any], limit: int) -> list[Any]:
         variations: list[Any] = []
-        for _ in range(min(3, num_needed)):
-            permuted = correct_option.copy()
-            random.shuffle(permuted)
-            variations.append(permuted)
+
+        # Permutations
+        for perm in self._list_permutations(value, limit):
+            variations.append(perm)
+            if len(variations) >= limit:
+                return variations
+
+        # Modify elements recursively
+        for i, elem in enumerate(value):
+            sub_variations = self._generate_variations(elem, limit)
+
+            for sv in sub_variations:
+                new_list = value.copy()
+                new_list[i] = sv
+                variations.append(new_list)
+
+                if len(variations) >= limit:
+                    return variations
+
         return variations
 
-    def _generate_numeric_variations(
-        self,
-        correct_option: int,
-        num_needed: int,
-        max_variation: int = 3,
-    ) -> list[Any]:
-        variations: list[Any] = (
-            []
-        )  # in order of closest to farthest from correct answer
-        seen: set[int] = {correct_option}
+    # =========================
+    # Dict Handling
+    # =========================
 
-        def add_variation(val: int) -> None:
-            if val not in seen:
-                if correct_option < 0 and val >= 0:
-                    return
-                if correct_option >= 0 and val < 0:
-                    return
-                variations.append(val)
-                seen.add(val)
-
-        for diff in range(1, max_variation + 1):
-            add_variation(correct_option - diff)
-            add_variation(correct_option + diff)
-            if len(variations) >= num_needed:
-                break
-
-        return variations[:num_needed]
-
-    def _generate_dict_variations(
-        self,
-        correct_option: dict[Any, Any],
-        num_needed: int,
-    ) -> list[Any]:
+    def _dict(self, value: dict[Any, Any], limit: int) -> list[Any]:
         variations: list[Any] = []
 
-        for key, value in correct_option.items():
-            if isinstance(value, int):
-                for var in self._generate_numeric_variations(
-                    value, num_needed, max_variation=1
-                ):
-                    variations.append({**correct_option, key: var})
-            elif isinstance(value, list):
-                for var in self._generate_list_variations(
-                    cast(list[Any], value), num_needed - len(variations)
-                ):
-                    variations.append({**correct_option, key: var})
+        for key, val in value.items():
+            sub_variations = self._generate_variations(val, limit)
 
-        random.shuffle(variations)
-        return variations[:num_needed]
+            for sv in sub_variations:
+                new_dict = dict(value)
+                new_dict[key] = sv
+                variations.append(new_dict)
 
-    def _add_distractor(
-        self,
-        current_distractors: list[Any],
-        seen: set[str],
-        incoming_distractor: Any,
-    ) -> None:
-        incoming_distractor_str = str(incoming_distractor)
-        if incoming_distractor is not None and incoming_distractor_str not in seen:
-            current_distractors.append(incoming_distractor)
-            seen.add(incoming_distractor_str)
+                if len(variations) >= limit:
+                    return variations
+
+        return variations
+
+    # =========================
+    # Numeric Variations
+    # =========================
+
+    def _numeric(self, value: int, limit: int) -> list[Any]:
+        variations: list[int] = []
+        seen: set[int] = {value}
+
+        for diff in range(1, limit + 3):
+            for candidate in (value - diff, value + diff):
+                if candidate in seen:
+                    continue
+
+                # Preserve sign
+                if (value >= 0 and candidate < 0) or (value < 0 and candidate >= 0):
+                    continue
+
+                variations.append(candidate)
+                seen.add(candidate)
+
+                if len(variations) >= limit:
+                    return variations
+
+        return variations
+
+    # =========================
+    # Permutations
+    # =========================
+
+    def _list_permutations(self, value: list[Any], limit: int) -> list[list[Any]]:
+        variations: list[list[Any]] = []
+        attempts = 0
+
+        while len(variations) < limit and attempts < limit * 3:
+            permuted = value.copy()
+            random.shuffle(permuted)
+
+            if permuted != value and permuted not in variations:
+                variations.append(permuted)
+
+            attempts += 1
+
+        return variations
+
+    # =========================
+    # Utilities
+    # =========================
+
+    def _key(self, value: Any) -> str:
+        return str(value)
