@@ -201,6 +201,21 @@ Tools used:
 * [query-engine](https://github.com/edcraft-org/query-engine)
 * Pydantic 2.12+
 
+## Enhancements
+
+### Query Generator Improvements
+
+Enhance the query generator to improve generated output quality.
+* Improve output cleaning when the final target is a function, branch, loop, such that the output is an internal object
+
+### Distractor Generator Enhancements
+
+Improve the quality and educational value of generated distractors for assessment questions. Explore using other packages. Refer to [enhancements](src/edcraft_engine/question_generator/distractor_generator/README.md#possible-enhancements)
+
+### Diagram Generation
+
+Generate diagrams from algorithm execution or data structures where applicable.
+
 ## License
 
 MIT License — see [LICENSE](LICENSE)
